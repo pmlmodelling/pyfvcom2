@@ -41,8 +41,15 @@ This project follows Python best practices:
 
 ## License
 
-[Add your license here]
+This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
 
 ## Contributing
 
-[Add contributing guidelines here]
+The team welcome contributions to the project! These include:
+
+- Reviewling pull requests.
+- Creating, commenting on and resolving issues.
+- Preparing documentation.
+- [Financial donations](https://pml.ac.uk/support-us/#how) to help support the work of the core team.
+
+If you are planning a large change to the code, please contact the team to discuss this first.

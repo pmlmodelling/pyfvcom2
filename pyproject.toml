@@ -13,7 +13,7 @@ authors = [
     {name = "Al Azhar (Original PyFVCOM author)"},
     {name = "Marius Dewar (Original PyFVCOM author)"},
 ]
-license = {text = "MIT"}
+license = {file = "LICENSE.txt"}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
