@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyfvcom2"
+description = "A Python package for processing FVCOM (Finite Volume Community Ocean Model) data"
+readme = "README.md"
+authors = [
+    {name = "James Clark", email = "jcl@pml.ac.uk"},
+    {name = "Pierre Cazenave (Original PyFVCOM author)"},
+    {name = "Michael Bedington (Original PyFVCOM author)"},
+    {name = "Al Azhar (Original PyFVCOM author)"},
+    {name = "Marius Dewar (Original PyFVCOM author)"},
+]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+]
+requires-python = ">=3.8"
+keywords = ["pyfvcom", "fvcom", "oceanography", "ocean-modeling"]
+dependencies = [
+    "numpy>=1.19.0",
+    "scipy>=1.5.0",
+    "matplotlib>=3.3.0",
+    "netCDF4>=1.5.0",
+    "xarray>=0.16.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=21.0",
+    "flake8>=3.8",
+    "mypy>=0.800",
+    "pre-commit>=2.0",
+]
+docs = [
+    "sphinx>=3.0",
+    "sphinx-rtd-theme>=0.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/pyfvcom2"
+Repository = "https://github.com/yourusername/pyfvcom2.git"
+Issues = "https://github.com/yourusername/pyfvcom2/issues"
+"Original PyFVCOM" = "https://github.com/pmlmodelling/PyFVCOM"
+
+[tool.setuptools.dynamic]
+version = {attr = "pyfvcom2.version.version"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
