@@ -1,0 +1,53 @@
+{% set name = "pyfvcom2" %}
+{% set version = load_setup_py_data().get('version') %}
+
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  #url: https://github.com/pmlmodelling/pyfvcom2/archive/v{{ version }}.tar.gz
+  # For local development, use:
+  path: ..
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv
+
+requirements:
+  host:
+    - python >=3.8
+    - pip
+    - setuptools >=61.0
+    - wheel
+  run:
+    - python >=3.8
+    - numpy >=1.19.0
+    - scipy >=1.5.0
+    - matplotlib-base >=3.3.0
+    - netcdf4 >=1.5.0
+    - xarray >=0.16.0
+
+test:
+  imports:
+    - pyfvcom2
+  commands:
+    - python -c "import pyfvcom2; print(pyfvcom2.__version__)"
+  requires:
+    - pytest >=6.0
+    - pytest-cov >=2.0
+
+about:
+  home: https://github.com/pmlmodelling/pyfvcom2
+  license: MIT
+  license_file: LICENSE.txt
+  summary: A Python package for processing FVCOM (Finite Volume Community Ocean Model) data
+  description: |
+    PyFVCOM2 is a Python library designed to work with FVCOM model output data, 
+    providing tools for data analysis, visualization, and processing of unstructured 
+    grid ocean model results. It is intended to be the successor of PyFVCOM.
+  doc_url: https://github.com/pmlmodelling/pyfvcom2
+  dev_url: https://github.com/pmlmodelling/pyfvcom2
+
