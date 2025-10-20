@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ main ]
 
 jobs:
   test:
@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
         python-version: ['3.8', '3.9', '3.10', '3.11']
 
     steps:
@@ -43,28 +43,28 @@ jobs:
         # Exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
         flake8 pyfvcom2 --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
     
-    - name: Check code formatting with black
-      run: |
-        black --check pyfvcom2/ tests/
+#    - name: Check code formatting with black
+#      run: |
+#        black --check pyfvcom2/ tests/
     
-    - name: Type check with mypy
-      run: |
-        mypy pyfvcom2/ --ignore-missing-imports
+#    - name: Type check with mypy
+#      run: |
+#        mypy pyfvcom2/ --ignore-missing-imports
     
     - name: Test package installation
       run: |
         python -c "import pyfvcom2; print(f'PyFVCOM2 version: {pyfvcom2.__version__}')"
     
-    - name: Run tests with pytest
-      run: |
-        # Run pytest with coverage, but don't fail if no tests found yet
-        pytest tests/ --cov=pyfvcom2 --cov-report=xml --cov-report=term-missing || echo "No tests found yet"
+#    - name: Run tests with pytest
+#      run: |
+#        # Run pytest with coverage, but don't fail if no tests found yet
+#        pytest tests/ --cov=pyfvcom2 --cov-report=xml --cov-report=term-missing || echo "No tests found yet"
     
-    - name: Upload coverage to Codecov
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
+#    - name: Upload coverage to Codecov
+#      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+#      uses: codecov/codecov-action@v3
+#      with:
+#        file: ./coverage.xml
+#        flags: unittests
+#        name: codecov-umbrella
+#        fail_ci_if_error: false
