@@ -136,6 +136,13 @@ class CMEMSReader:
         self._unmasked_lats = self._lat_grid[~self.mask_2D]
 
     @property
+    def n_depths(self):
+        if not self.has_depth_dimension:
+            raise ValueError("The dataset does not have a depth dimension.")
+
+        return self.dataset.dims[self.depth_dim_name].size
+
+    @property
     def lons(self):
         return self.dataset.variables[f"{self.lon_dim_name}"][:]
 
@@ -158,6 +165,30 @@ class CMEMSReader:
     @property
     def unmasked_lats(self):
         return self._unmasked_lats
+
+    @property
+    def depth_levels(self):
+        if not self.has_depth_dimension:
+            raise ValueError("The dataset does not have a depth dimension.")
+
+        return -self.dataset.variables[f"{self.depth_dim_name}"][:].values
+
+    def get_var_ndims(self, var_name: str) -> int:
+        """Get the number of dimensions of a variable.
+
+        Args:
+            var_name (str): Variable name.
+
+        Returns:
+            int: Number of dimensions.
+        """
+        if var_name not in self.dataset.variables:
+            raise ValueError(
+                f"The supplied variable {var_name} is not in the dataset {self.file_path}"
+            )
+
+        var = self.dataset[var_name]
+        return len(var.dims)
 
     def get_mask(self, var) -> np.ndarray:
         """Get the mask for a variable.
