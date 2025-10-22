@@ -16,19 +16,14 @@ def sigma_to_z_coords(
     Returns:
         np.ndarray: 2D array of z coordinates (depth levels, horizontal points).
     """
-    n_levels = sigma_coords.shape[0]
-    n_points = len(zeta)
-
-    z_coords = np.empty((n_levels, n_points), dtype=np.float32)
-
-    for i in range(n_points):
-        h = bathymetry[i]
-        zet = zeta[i]
-        for k in range(n_levels):
-            sigma = sigma_coords[k, i]
-            z = zet + (h + zet) * sigma
-            z_coords[k, i] = z
-
+    # Vectorized computation using NumPy broadcasting
+    # zeta and bathymetry are 1D arrays that will be broadcast across all levels
+    h_plus_zeta = bathymetry + zeta
+    
+    # Broadcasting: zeta (1D) + (h_plus_zeta (1D) * sigma_coords (2D))
+    # This computes all z coordinates in a single vectorized operation
+    z_coords = zeta + h_plus_zeta * sigma_coords
+    
     return z_coords
 
 
@@ -45,17 +40,11 @@ def z_to_sigma_coords(
     Returns:
         np.ndarray: 2D array of sigma coordinates (n_levels, n_points).
     """
-    n_levels = z_coords.shape[0]
-    n_points = len(zeta)
-
-    sigma_coords = np.empty((n_levels, n_points), dtype=np.float32)
-
-    for i in range(n_points):
-        h = bathymetry[i]
-        zet = zeta[i]
-        for k in range(n_levels):
-            z = z_coords[k, i]
-            sigma = (z - zet) / (h + zet)
-            sigma_coords[k, i] = sigma
-
+    # Vectorized computation using NumPy broadcasting
+    h_plus_zeta = bathymetry + zeta
+    
+    # Broadcasting: (z_coords (2D) - zeta (1D)) / h_plus_zeta (1D)
+    # This computes all sigma coordinates in a single vectorized operation
+    sigma_coords = (z_coords - zeta) / h_plus_zeta
+    
     return sigma_coords
