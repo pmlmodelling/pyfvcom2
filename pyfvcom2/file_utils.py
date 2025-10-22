@@ -5,7 +5,7 @@ from glob import glob
 from typing import Optional
 from datetime import datetime
 from datetime import timedelta
-from netcdf4 import Dataset
+from netCDF4 import Dataset
 from cftime import num2pydate
 from pyfvcom2.exceptions import PyFVCOM2FileNotFoundError
 
