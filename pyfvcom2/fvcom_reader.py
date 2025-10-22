@@ -1,7 +1,7 @@
 """FVCOM Reader"""
 
 import numpy as np
-import xarray as xr
+from netCDF4 import Dataset
 
 
 class FVCOMReader:
@@ -28,64 +28,87 @@ class FVCOMReader:
 
     def _load_data(self):
         """Load the FVCOM netCDF file into an xarray Dataset."""
-        self.dataset = xr.open_dataset(self.filepath)
+        self.dataset = Dataset(self.filepath)
 
     @property
     def n_nodes(self):
         """Get the number of nodes in the FVCOM grid."""
-        return self.dataset.dims["node"].size
+        return self.dataset.dimensions["node"].size
 
     @property
     def n_elements(self):
         """Get the number of elements in the FVCOM grid."""
-        return self.dataset.dims["nele"].size
+        return self.dataset.dimensions["nele"].size
 
     @property
     def n_sigma_layers(self):
         """Get the number of sigma layers in the FVCOM grid."""
-        return self.dataset.dims["siglay"].size
+        return self.dataset.dimensions["siglay"].size
 
     @property
     def n_sigma_levels(self):
         """Get the number of sigma levels in the FVCOM grid."""
-        return self.dataset.dims["siglev"].size
+        return self.dataset.dimensions["siglev"].size
 
     @property
     def lon_nodes(self):
         """Get the longitude values from the dataset."""
-        return self.dataset["lon"].values
+        return self.dataset.variables["lon"][:]
 
     @property
     def lat_nodes(self):
         """Get the latitude values from the dataset."""
-        return self.dataset["lat"].values
+        return self.dataset["lat"][:]
 
     @property
     def lon_elements(self):
         """Get the longitude values of element centroids."""
-        return self.dataset["lonc"].values
+        return self.dataset["lonc"][:]
 
     @property
     def lat_elements(self):
         """Get the latitude values of element centroids."""
-        return self.dataset["latc"].values
+        return self.dataset["latc"][:]
 
     @property
     def bathy_nodes(self):
         """Get the bathymetry values at nodes (transformed so to be positive up)"""
-        return -self.dataset["h"].values
+        return self._return_variable_data("h") * -1.
 
     @property
     def bathy_elements(self):
         """Get the bathymetry values at element centroids (transformed so to be positive up)"""
-        return -self.dataset["h_center"].values
+        return self._return_variable_data("h_center") * -1.
 
     @property
     def sigma_layers_nodes(self):
         """Get the sigma layer values at nodes."""
-        return self.dataset["siglay"].values
+        return self._return_variable_data("siglay")
 
     @property
     def sigma_layers_elements(self):
         """Get the sigma layer values at element centroids."""
-        return self.dataset["siglay_center"].values
+        return self._return_variable_data("siglay_center")
+
+    def _return_variable_data(self, var_name):
+        """Return the data for a given variable name.
+
+        Warn if the variable contains masked data for any reason.
+
+        Args:
+            var_name (str): The name of the variable to retrieve.
+        Returns:
+            np.ndarray: The data array for the specified variable.
+        """
+        if np.ma.is_masked(self.dataset["siglay_center"][:]):
+            print(
+                f"Warning: {var_name} contains masked data. "
+                "Masked values will be filled with default fill value."
+            )
+        return np.ma.getdata(self.dataset.variables[var_name][:])
+
+    def close(self):
+        """Close the dataset to free up resources."""
+        if self.dataset is not None:
+            self.dataset.close()
+            self.dataset = None

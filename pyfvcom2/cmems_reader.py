@@ -77,7 +77,7 @@ class CMEMSReader:
 
         # Check reference var exists
         self.reference_var_name = reference_var_name
-        print(f"Using reference variables {self.reference_var_name}.")
+        print(f"Using reference variable {self.reference_var_name}.")
 
         if self.reference_var_name not in self.dataset.variables:
             raise PyFVCOM2ValueError(
@@ -141,7 +141,7 @@ class CMEMSReader:
         if not self.has_depth_dimension:
             raise PyFVCOM2ValueError("The dataset does not have a depth dimension.")
 
-        return self.dataset.dims[self.depth_dim_name].size
+        return self.dataset.sizes[self.depth_dim_name]
 
     @property
     def lons(self):
@@ -280,7 +280,7 @@ class CMEMSReader:
             var_data = var.values
             return var_data
 
-    def get_unmasked_var(
+    def get_unmasked_variable(
         self, var_name: str, time_index: int = 0, depth_index: int = None
     ) -> np.ndarray:
         """Get the unmasked values of a variable at a given time and depth index.
@@ -357,3 +357,9 @@ class CMEMSReader:
                 var_data_filled[k:, j, i] = var_data_filled[k, j, i]
 
         return var_data_filled
+
+    def close(self):
+        """Close the dataset to free up resources."""
+        if self.dataset is not None:
+            self.dataset.close()
+            self.dataset = None
