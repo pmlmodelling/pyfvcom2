@@ -1,4 +1,4 @@
-""" PyFVCOM2 exceptions
+"""PyFVCOM2 exceptions
 
 The intention here is to help callers distinguish between expected
 PyFVCOM2 exceptions and regular python exceptions, which indicate a
@@ -24,6 +24,7 @@ class PyFVCOM2ValueError(PyFVCOM2Exception):
 
 class PyFVCOM2TypeError(PyFVCOM2Exception):
     pass
+
 
 class PyFVCOM2FileNotFoundError(PyFVCOM2Exception):
     pass

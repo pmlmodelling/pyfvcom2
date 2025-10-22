@@ -10,7 +10,12 @@ from cftime import num2pydate
 from pyfvcom2.exceptions import PyFVCOM2FileNotFoundError
 
 
-def find_file(dir_name: str, file_stem: str, date_time: datetime, tolerance_hours: Optional[int] = 0) -> str:
+def find_file(
+    dir_name: str,
+    file_stem: str,
+    date_time: datetime,
+    tolerance_hours: Optional[int] = 0,
+) -> str:
     """Find a file in a directory matching a given stem and containing date_time within a given tolerance.
 
     Args:
@@ -32,15 +37,19 @@ def find_file(dir_name: str, file_stem: str, date_time: datetime, tolerance_hour
 
     # Define the time window for matching
     start_time = date_time - timedelta(hours=tolerance_hours)
-    end_time = date_time + timedelta(hours=tolerance_hours) 
+    end_time = date_time + timedelta(hours=tolerance_hours)
 
     for file_path in candidate_files:
         with Dataset(file_path) as ds:
             # Read time variable and convert to datetime
             datetimes = num2pydate(
-                ds.variables['time'][:],
-                units=ds.variables['time'].units,
-                calendar=ds.variables['time'].calendar if hasattr(ds.variables['time'], 'calendar') else 'standard'
+                ds.variables["time"][:],
+                units=ds.variables["time"].units,
+                calendar=(
+                    ds.variables["time"].calendar
+                    if hasattr(ds.variables["time"], "calendar")
+                    else "standard"
+                ),
             )
 
         if datetimes[0] <= start_time and datetimes[-1] >= end_time:
@@ -52,4 +61,6 @@ def find_file(dir_name: str, file_stem: str, date_time: datetime, tolerance_hour
 
             return file_path_found, closest_time_index
 
-    raise PyFVCOM2FileNotFoundError(f"No file found in {dir_name} matching stem {file_stem} within {tolerance_hours} hours of {date_time}.")
+    raise PyFVCOM2FileNotFoundError(
+        f"No file found in {dir_name} matching stem {file_stem} within {tolerance_hours} hours of {date_time}."
+    )
