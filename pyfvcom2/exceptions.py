@@ -24,3 +24,6 @@ class PyFVCOM2ValueError(PyFVCOM2Exception):
 
 class PyFVCOM2TypeError(PyFVCOM2Exception):
     pass
+
+class PyFVCOM2FileNotFoundError(PyFVCOM2Exception):
+    pass
