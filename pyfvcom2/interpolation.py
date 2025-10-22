@@ -32,7 +32,7 @@ def cmems_to_fvcom(
     # Establish whether the variables are 2D or 3D based on CMEMS data
     for var_name_map in var_name_maps:
         print(
-            f"Interpolating {var_name_map.cmems_name} to FVCOM {var_name_map.fvcom_name}..."
+            f"Interpolating CMEMS {var_name_map.cmems_name} to FVCOM grid..."
         )
         cmems_var_name = var_name_map.cmems_name
 
