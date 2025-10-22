@@ -6,6 +6,7 @@ from scipy import interpolate
 from pyfvcom2.cmems_reader import CMEMSReader, CMEMSVariableMap
 from pyfvcom2.fvcom_reader import FVCOMReader
 from pyfvcom2.coordinates import sigma_to_z_coords
+from pyfvcom2.exceptions import PyFVCOM2ValueError
 
 
 def cmems_to_fvcom(
@@ -77,7 +78,7 @@ def cmems_to_fvcom_2d(
         fvcom_lons = fvcom_reader.lon_elements
         fvcom_lats = fvcom_reader.lat_elements
     else:
-        raise ValueError(
+        raise PyFVCOM2ValueError(
             f"grid_position must be either 'nodes' or 'elements', received: {var_name_map.grid_position}"
         )
 
@@ -128,7 +129,7 @@ def cmems_to_fvcom_3d(
         sigma_layers = fvcom_reader.sigma_layers_elements
         bathy = fvcom_reader.bathy_elements
     else:
-        raise ValueError(
+        raise PyFVCOM2ValueError(
             f"grid_position must be either 'nodes' or 'elements', received: {var_name_map.grid_position}"
         )
 

@@ -5,6 +5,7 @@ import xarray as xr
 from scipy import interpolate
 from typing import Optional
 from collections import namedtuple
+from pyfvcom2.exceptions import PyFVCOM2ValueError
 
 
 # Named tuple for mapping cmems variable names to fvcom variable names and the fvcom grid position
@@ -51,7 +52,7 @@ class CMEMSReader:
                 dim_name not in self.dataset.dims
                 and dim_name not in self.dataset.variables
             ):
-                raise ValueError(
+                raise PyFVCOM2ValueError(
                     f"Dimension variable name {dim_name} not found in CMEMS file {self.file_path}"
                 )
 
@@ -79,7 +80,7 @@ class CMEMSReader:
         print(f"Using reference variables {self.reference_var_name}.")
 
         if self.reference_var_name not in self.dataset.variables:
-            raise ValueError(
+            raise PyFVCOM2ValueError(
                 f"Reference variabe {self.reference_var_name} not found in dataset {file_path}."
             )
 
@@ -89,7 +90,7 @@ class CMEMSReader:
                 self.depth_dim_name
                 not in self.dataset.variables[self.reference_var_name].dims
             ):
-                raise ValueError(
+                raise PyFVCOM2ValueError(
                     f"Please provide a 3D reference variable so the depth mask can be inferred. "
                     f"The supplied reference variable {self.reference_var_name} does not have a depth axis."
                 )
@@ -138,7 +139,7 @@ class CMEMSReader:
     @property
     def n_depths(self):
         if not self.has_depth_dimension:
-            raise ValueError("The dataset does not have a depth dimension.")
+            raise PyFVCOM2ValueError("The dataset does not have a depth dimension.")
 
         return self.dataset.dims[self.depth_dim_name].size
 
@@ -169,7 +170,7 @@ class CMEMSReader:
     @property
     def depth_levels(self):
         if not self.has_depth_dimension:
-            raise ValueError("The dataset does not have a depth dimension.")
+            raise PyFVCOM2ValueError("The dataset does not have a depth dimension.")
 
         return -self.dataset.variables[f"{self.depth_dim_name}"][:].values
 
@@ -183,7 +184,7 @@ class CMEMSReader:
             int: Number of dimensions.
         """
         if var_name not in self.dataset.variables:
-            raise ValueError(
+            raise PyFVCOM2ValueError(
                 f"The supplied variable {var_name} is not in the dataset {self.file_path}"
             )
 
@@ -227,7 +228,7 @@ class CMEMSReader:
             return self._bottom_indices
 
         if self.mask_3D is None:
-            raise ValueError(
+            raise PyFVCOM2ValueError(
                 "3D variable mask not set. Does the output file contain 3D variables?"
             )
 
@@ -263,7 +264,7 @@ class CMEMSReader:
             np.ndarray: Variable values.
         """
         if var_name not in self.dataset.variables:
-            raise ValueError(f"The supplied variable {var_name} is not in the dataset")
+            raise PyFVCOM2ValueError(f"The supplied variable {var_name} is not in the dataset")
 
         if not self.has_depth_dimension:
             var = self.dataset[var_name].isel({self.time_dim_name: time_index})
@@ -272,7 +273,7 @@ class CMEMSReader:
 
         else:
             if depth_index is None:
-                raise ValueError("depth_index must be provided for 3D variables")
+                raise PyFVCOM2ValueError("depth_index must be provided for 3D variables")
             var = self.dataset[var_name].isel(
                 {self.time_dim_name: time_index, self.depth_dim_name: depth_index}
             )
@@ -292,7 +293,7 @@ class CMEMSReader:
             np.ndarray: Unmasked variable values.
         """
         if var_name not in self.dataset.variables:
-            raise ValueError(f"The supplied variable {var_name} is not in the dataset")
+            raise PyFVCOM2ValueError(f"The supplied variable {var_name} is not in the dataset")
 
         if not self.has_depth_dimension:
             var = self.dataset[var_name].isel({self.time_dim_name: time_index})
@@ -301,7 +302,7 @@ class CMEMSReader:
 
         else:
             if depth_index is None:
-                raise ValueError("depth_index must be provided for 3D variables")
+                raise PyFVCOM2ValueError("depth_index must be provided for 3D variables")
             var = self.dataset[var_name].isel(
                 {self.time_dim_name: time_index, self.depth_dim_name: depth_index}
             )
@@ -323,7 +324,7 @@ class CMEMSReader:
             np.ndarray: Filled variable values.
         """
         if var_name not in self.dataset.variables:
-            raise ValueError(f"Variable {var_name} was not specified as a 3D variable")
+            raise PyFVCOM2ValueError(f"Variable {var_name} was not specified as a 3D variable")
 
         var = self.dataset[var_name].isel({self.time_dim_name: time_index})
         var_data = var.values  # shape (depth, lat, lon)
