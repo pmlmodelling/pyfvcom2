@@ -13,10 +13,24 @@ __author__ = "James Clark"
 __email__ = "jcl@pml.ac.uk"
 __license__ = "MIT"
 
+# Import exceptions
+from .exceptions import (
+    PyFVCOM2Exception,
+    PyFVCOM2RuntimeError,
+    PyFVCOM2AttributeError,
+    PyFVCOM2ValueError,
+    PyFVCOM2TypeError,
+)
+
 # Define what gets imported with "from pyfvcom2 import *"
 __all__ = [
     "__version__",
     "__author__", 
     "__email__",
     "__license__",
+    "PyFVCOM2Exception",
+    "PyFVCOM2RuntimeError", 
+    "PyFVCOM2AttributeError",
+    "PyFVCOM2ValueError",
+    "PyFVCOM2TypeError",
 ]
