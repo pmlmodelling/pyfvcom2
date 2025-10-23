@@ -10,6 +10,7 @@ Contents
     :maxdepth: 2
 
     install/installation
-    documentation/index
+    cookbook/index
+    api/index
     acknowledgements
 
