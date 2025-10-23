@@ -33,4 +33,6 @@ __all__ = [
     "PyFVCOM2AttributeError",
     "PyFVCOM2ValueError",
     "PyFVCOM2TypeError",
+    # Subpackages
+    "plotting",
 ]
