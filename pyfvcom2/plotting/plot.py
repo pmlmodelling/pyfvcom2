@@ -324,7 +324,7 @@ class FVCOMPlotter(PyFVCOM2Plotter):
     def _read_grid_information(self, ds):
         # Read in the required grid variables
         self.n_nodes = ds.dimensions["node"].size
-        self.n_elems = ds.dimensions["element"].size
+        self.n_elems = ds.dimensions["nele"].size
         self.nv = ds.variables["nv"][:] - 1  # Adjust for Fortran indexing
 
         if self.geographic_coords:
