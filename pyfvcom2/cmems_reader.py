@@ -264,7 +264,9 @@ class CMEMSReader:
             np.ndarray: Variable values.
         """
         if var_name not in self.dataset.variables:
-            raise PyFVCOM2ValueError(f"The supplied variable {var_name} is not in the dataset")
+            raise PyFVCOM2ValueError(
+                f"The supplied variable {var_name} is not in the dataset"
+            )
 
         if not self.has_depth_dimension:
             var = self.dataset[var_name].isel({self.time_dim_name: time_index})
@@ -273,7 +275,9 @@ class CMEMSReader:
 
         else:
             if depth_index is None:
-                raise PyFVCOM2ValueError("depth_index must be provided for 3D variables")
+                raise PyFVCOM2ValueError(
+                    "depth_index must be provided for 3D variables"
+                )
             var = self.dataset[var_name].isel(
                 {self.time_dim_name: time_index, self.depth_dim_name: depth_index}
             )
@@ -293,7 +297,9 @@ class CMEMSReader:
             np.ndarray: Unmasked variable values.
         """
         if var_name not in self.dataset.variables:
-            raise PyFVCOM2ValueError(f"The supplied variable {var_name} is not in the dataset")
+            raise PyFVCOM2ValueError(
+                f"The supplied variable {var_name} is not in the dataset"
+            )
 
         if not self.has_depth_dimension:
             var = self.dataset[var_name].isel({self.time_dim_name: time_index})
@@ -302,7 +308,9 @@ class CMEMSReader:
 
         else:
             if depth_index is None:
-                raise PyFVCOM2ValueError("depth_index must be provided for 3D variables")
+                raise PyFVCOM2ValueError(
+                    "depth_index must be provided for 3D variables"
+                )
             var = self.dataset[var_name].isel(
                 {self.time_dim_name: time_index, self.depth_dim_name: depth_index}
             )
@@ -324,7 +332,9 @@ class CMEMSReader:
             np.ndarray: Filled variable values.
         """
         if var_name not in self.dataset.variables:
-            raise PyFVCOM2ValueError(f"Variable {var_name} was not specified as a 3D variable")
+            raise PyFVCOM2ValueError(
+                f"Variable {var_name} was not specified as a 3D variable"
+            )
 
         var = self.dataset[var_name].isel({self.time_dim_name: time_index})
         var_data = var.values  # shape (depth, lat, lon)

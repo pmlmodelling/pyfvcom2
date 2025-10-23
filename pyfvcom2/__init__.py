@@ -25,11 +25,11 @@ from .exceptions import (
 # Define what gets imported with "from pyfvcom2 import *"
 __all__ = [
     "__version__",
-    "__author__", 
+    "__author__",
     "__email__",
     "__license__",
     "PyFVCOM2Exception",
-    "PyFVCOM2RuntimeError", 
+    "PyFVCOM2RuntimeError",
     "PyFVCOM2AttributeError",
     "PyFVCOM2ValueError",
     "PyFVCOM2TypeError",

@@ -73,12 +73,12 @@ class FVCOMReader:
     @property
     def bathy_nodes(self):
         """Get the bathymetry values at nodes (transformed so to be positive up)"""
-        return self._return_variable_data("h") * -1.
+        return self._return_variable_data("h") * -1.0
 
     @property
     def bathy_elements(self):
         """Get the bathymetry values at element centroids (transformed so to be positive up)"""
-        return self._return_variable_data("h_center") * -1.
+        return self._return_variable_data("h_center") * -1.0
 
     @property
     def sigma_layers_nodes(self):

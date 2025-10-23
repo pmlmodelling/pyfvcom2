@@ -34,16 +34,16 @@ def write_restart(
     ]  # Remove trailing comma
 
     # Use ncks to copy over everything from the template file except the variables listed in the data dict
-    ncks_command = f"ncks --no_crd -O -x -v {exclude_vars} {template_file_path} {output_path}"
+    ncks_command = (
+        f"ncks --no_crd -O -x -v {exclude_vars} {template_file_path} {output_path}"
+    )
 
     # Capture the output and errors
     result = subprocess.run(ncks_command, shell=True, check=True)
     if result.returncode != 0:
         # Print the error message
         print(f"Error occurred while running ncks command: {result.stderr}")
-        raise RuntimeError(
-            f"ncks command failed with return code {result.returncode}"
-        )
+        raise RuntimeError(f"ncks command failed with return code {result.returncode}")
 
     # Now append the new data to the output file. We will copy the attributes from the template file
     # and then write the new data.
@@ -113,4 +113,4 @@ def write_restart(
                 var_data = var_data.astype(template_var.datatype)
 
             # Write the data
-            output_var[0,:] = var_data
+            output_var[0, :] = var_data

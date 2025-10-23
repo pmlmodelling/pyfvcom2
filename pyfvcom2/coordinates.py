@@ -19,11 +19,11 @@ def sigma_to_z_coords(
     # Vectorized computation using NumPy broadcasting
     # zeta and bathymetry are 1D arrays that will be broadcast across all levels
     h_plus_zeta = bathymetry + zeta
-    
+
     # Broadcasting: zeta (1D) + (h_plus_zeta (1D) * sigma_coords (2D))
     # This computes all z coordinates in a single vectorized operation
     z_coords = zeta + h_plus_zeta * sigma_coords
-    
+
     return z_coords
 
 
@@ -42,9 +42,9 @@ def z_to_sigma_coords(
     """
     # Vectorized computation using NumPy broadcasting
     h_plus_zeta = bathymetry + zeta
-    
+
     # Broadcasting: (z_coords (2D) - zeta (1D)) / h_plus_zeta (1D)
     # This computes all sigma coordinates in a single vectorized operation
     sigma_coords = (z_coords - zeta) / h_plus_zeta
-    
+
     return sigma_coords
