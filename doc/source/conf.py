@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.abspath('../../pyfvcom2'))
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc',
+extensions = ['autodoc2',
               'sphinx.ext.autosummary',
               'sphinx.ext.napoleon',
               'sphinx.ext.intersphinx',
@@ -42,7 +42,26 @@ extensions = ['sphinx.ext.autodoc',
               'sphinx_copybutton',
               'nbsphinx',
               'sphinx_rtd_theme',
+              'sphinxcontrib.googleanalytics',
               'IPython.sphinxext.ipython_console_highlighting']
+
+# Autodoc2
+autodoc2_packages = ['../../pyfvcom2']
+
+# Control autodoc2 output depth and content
+autodoc2_output_dir = "apidocs"
+autodoc2_index_template = None  # Use default template
+
+# Configure autodoc2 to generate less nested content
+autodoc2_module_all_regexes = [
+    r"pyfvcom2\..*",
+]
+
+# Control autodoc2 content inclusion
+autodoc2_skip_module_regexes = [
+    r".*\.tests?.*",  # Skip test modules
+    r".*\._.*",      # Skip private modules
+]
 
 # Autodoc
 napoleon_google_docstring = False
@@ -61,6 +80,14 @@ source_suffix = ['.rst', '.md']
 
 # The master toctree document.
 master_doc = 'index'
+
+# Control HTML table of contents depth
+html_theme_options = {
+    'navigation_depth': 2,  # Limit sidebar navigation depth
+    'collapse_navigation': True,  # Collapse navigation sections
+    'sticky_navigation': True,
+    'includehidden': False,  # Don't include hidden toctree entries
+}
 
 # General information about the project.
 project = 'PyFVCOM2'
@@ -101,6 +128,8 @@ pygments_style = 'sphinx'
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
 
+# Google analytics
+googleanalytics_id = 'G-5045ZREHMB'
 
 # -- Options for HTML output ----------------------------------------------
 
@@ -108,14 +137,6 @@ todo_include_todos = True
 # a list of builtin themes.
 #
 html_theme = 'sphinx_rtd_theme'
-
-# Theme options are theme-specific and customize the look and feel of a theme
-# further.  For a list of options available for each theme, see the
-# documentation.
-#
-html_theme_options = {
-    'analytics_id': 'G-5045ZREHMB'
-}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

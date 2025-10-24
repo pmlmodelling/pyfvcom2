@@ -7,10 +7,12 @@ Contents
 ========
 
 .. toctree::
-    :maxdepth: 2
+   :maxdepth: 1
 
-    install/installation
-    cookbook/index
-    api/index
-    acknowledgements
+   installation
+   cookbook/index
+   api
+   contributing
+   license
+   acknowledgements
 
