@@ -8,9 +8,7 @@ from pyfvcom2.fvcom_reader import FVCOMReader
 from pyfvcom2.coordinates import sigma_to_z_coords
 from pyfvcom2.exceptions import PyFVCOM2ValueError
 
-__all__ = [
-    "cmems_to_fvcom"
-]
+__all__ = ["cmems_to_fvcom"]
 
 
 def cmems_to_fvcom(

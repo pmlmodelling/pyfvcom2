@@ -3,9 +3,9 @@
 __all__ = [
     "PyFVCOM2RuntimeError",
     "PyFVCOM2AttributeError",
-    "PyFVCOM2ValueError", 
+    "PyFVCOM2ValueError",
     "PyFVCOM2TypeError",
-    "PyFVCOM2FileNotFoundError"
+    "PyFVCOM2FileNotFoundError",
 ]
 
 

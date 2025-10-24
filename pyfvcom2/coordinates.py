@@ -2,10 +2,10 @@
 
 import numpy as np
 
-__all__ = [
-    "sigma_to_z_coords",
-    "z_to_sigma_coords"
-]
+from pyfvcom2.exceptions import PyFVCOM2ValueError
+
+
+__all__ = ["sigma_to_z_coords", "z_to_sigma_coords"]
 
 
 def sigma_to_z_coords(
@@ -21,6 +21,22 @@ def sigma_to_z_coords(
     Returns:
         np.ndarray: 2D array of z coordinates (depth levels, horizontal points).
     """
+    # Check array shapes
+    if sigma_coords.ndim != 2:
+        raise PyFVCOM2ValueError("sigma_coords must be a 2D array")
+    if zeta.ndim != 1:
+        raise PyFVCOM2ValueError("zeta must be a 1D array")
+    if bathymetry.ndim != 1:
+        raise PyFVCOM2ValueError("bathymetry must be a 1D array")
+    if sigma_coords.shape[1] != zeta.shape[0]:
+        raise PyFVCOM2ValueError(
+            "Number of horizontal points in sigma_coords must match length of zeta"
+        )
+    if sigma_coords.shape[1] != bathymetry.shape[0]:
+        raise PyFVCOM2ValueError(
+            "Number of horizontal points in sigma_coords must match length of bathymetry"
+        )
+
     # Vectorized computation using NumPy broadcasting
     # zeta and bathymetry are 1D arrays that will be broadcast across all levels
     h_plus_zeta = bathymetry + zeta
