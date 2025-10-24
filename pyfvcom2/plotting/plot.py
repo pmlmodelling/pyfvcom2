@@ -17,6 +17,15 @@ import cartopy.crs as ccrs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from cmocean import cm
 
+__all__ = [
+    "PyFVCOM2Plotter",
+    "FVCOMPlotter",
+    "create_figure",
+    "create_cbar_ax",
+    "cm2inch",
+    "colourmap"
+]
+
 
 class PyFVCOM2Plotter:
     """Base class for PyFVCOM2 plotters
@@ -26,18 +35,12 @@ class PyFVCOM2Plotter:
     particle trajectories on top of underlying field data should be created
     using the appropriate derived class.
 
-    Parameters
-    ----------
-    geographic_coords : boolean, optional
-        Boolean specifying whether or not to use cartopy to create a 2D map
-        on top of which the data will be plotted. The default option is
-        `True`. If `False`, a simple Cartesian grid is drawn instead.
-
-    font_size : int, optional
-        Font size to use when rendering plot text
-
-    line_width : float, optional
-        Default line width to use when plotting
+    Args:
+        geographic_coords (bool, optional): Boolean specifying whether or not to use cartopy to create a 2D map
+            on top of which the data will be plotted. The default option is
+            `True`. If `False`, a simple Cartesian grid is drawn instead.
+        font_size (int, optional): Font size to use when rendering plot text
+        line_width (float, optional): Default line width to use when plotting
 
     """
 
@@ -85,24 +88,15 @@ class PyFVCOM2Plotter:
         In addition to the listed parameters, the function accepts all keyword arguments taken by the Matplotlib
         plot command.
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            x (np.ndarray): Array of x coordinates to plot.
+            y (np.ndarray): Array of y coordinates to plot.
+            transform (ccrs.Projection, optional): Transform for geographic projections
+            **kwargs: Additional keyword arguments passed to matplotlib plot
 
-        x : ND array
-            Array of x coordinates to plot.
-
-        y : ND array
-            Array of y coordinates to plot.
-
-        Returns
-        -------
-        axes : matplotlib.axes.Axes
-            Axes object
-
-        line_plot : matplotlib.collections.Line2D
-            The plot object
+        Returns:
+            tuple: (axes, line_plots) - Axes object and list of line plot objects
         """
         transform = self._check_transform(transform)
 
@@ -139,10 +133,8 @@ class PyFVCOM2Plotter:
     def _get_zorder(self):
         """Get the zorder for plotting
 
-        Returns
-        -------
-        zorder : int
-            The zorder to use for plotting
+        Returns:
+            int: The zorder to use for plotting
         """
         zorder = self.current_zorder
         self.current_zorder += 1
@@ -153,10 +145,8 @@ class PyFVCOM2Plotter:
 
         Useful when updating plots for animations.
 
-        Parameters
-        ----------
-        line_plots : list
-            List of line plot objects created during call to plot_lines()
+        Args:
+            line_plots (list): List of line plot objects created during call to plot_lines()
         """
         while line_plots:
             line_plots.pop(0).remove()
@@ -184,42 +174,20 @@ class PyFVCOM2Plotter:
         See Matplotlib's scatter documentation for a list of additional key
         word arguments.
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            x (np.ndarray): Array of 'x' positions. If plotting in geographic coords, these should be longitudes.
+            y (np.ndarray): Array of 'y' positions. If plotting in geographic coords, these should be latitudes.
+            configure (bool, optional): If true, configure the plot by setting plot extents, drawing coastlines etc. Default: False.
+            extents (list, optional): Four element list giving lon/lat limits (e.g. [-4.56, -3.76, 55.12, 55.84])
+            transform (ccrs.Projection, optional): The type of transform to perform if geographic_coords is True.
+            draw_coastlines (bool, optional): Draw coastlines? Only used if geographic_coords is True.
+            resolution (str, optional): Resolution to use when plotting the coastline. Only used when draw_coastline=True. Default: '10m'.
+            tick_inc (bool, optional): Draw ticks? Only used if geographic_coords is True.
+            **kwargs: Additional keyword arguments passed to matplotlib scatter
 
-        x : 1D array
-            Array of 'x' positions. If plotting in geographic coords, these should be longitudes.
-
-        y : 1D array
-            Array of 'y' positions. If plotting in geographic coords, these should be latitudes.
-
-        configure : bool, optional
-            If true, configure the plot by setting plot extents, drawing coastlines etc. Default: False.
-
-        extents : list, optional
-            Four element list giving lon/lat limits (e.g. [-4.56, -3.76, 55.12, 55.84])
-
-        transform : cartopy.crs.Projection
-            The type of transform to perform if geographic_coords is True. Optional.
-
-        draw_coastlines : bool
-            Draw coastlines? Only used if geographic_coords is True. Optional.
-
-        resolution : str, optional
-            Resolution to use when plotting the coastline. Only used when draw_coastline=True. Default: '10m'.
-
-        tick_inc : bool
-            Draw ticks? Only used if geographic_coords is True. Optional.
-
-        Returns
-        -------
-        ax : matplotlib.axes.Axes
-            Axes object
-
-        scatter_plot : matplotlib.collection.PathCollection
-            The scatter plot
+        Returns:
+            tuple: (ax, scatter_plot) - Axes object and scatter plot collection
         """
         transform = self._check_transform(transform)
 
@@ -269,13 +237,9 @@ class PyFVCOM2Plotter:
     def set_title(self, ax, title):
         """Set the title
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object
-
-        title : str
-            Plot title
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            title (str): Plot title
         """
         ax.set_title(title, fontsize=self.font_size)
 
@@ -300,10 +264,11 @@ class FVCOMPlotter(PyFVCOM2Plotter):
     Class to assist in the creation of plots and animations based on FVCOM
     data.
 
-    Parameters
-    ----------
-    fvcom_file_name : Dataset or str
-        Path to a FVCOM NetCDF file.
+    Args:
+        fvcom_file_name (str): Path to a FVCOM NetCDF file.
+        geographic_coords (bool, optional): Whether to use geographic coordinates. Default True.
+        font_size (int, optional): Font size for plot text. Default 10.
+        line_width (float, optional): Default line width for plotting. Default 0.2.
     """
 
     def __init__(
@@ -362,7 +327,7 @@ class FVCOMPlotter(PyFVCOM2Plotter):
         extents: Optional[list] = None,
         draw_coastlines: Optional[bool] = False,
         resolution: Optional[str] = "10m",
-        **kwargs,
+        **kwargs
     ):
         """Map the supplied field
 
@@ -371,51 +336,26 @@ class FVCOMPlotter(PyFVCOM2Plotter):
         Additional plotting options are passed to `matplotlib.pyplot.pcolormesh`. See the matplotlib documentation
         for a full list of supported options.
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            field (np.ndarray): The field to plot.
+            update (bool, optional): If true, update the existing plot. Specifically, the axes will be checked to see if it contains a
+                PolyCollection object, as generated by tripcolor. If found, the associated data array will be
+                updated with the supplied field data. This is faster than drawing a new map
+            configure (bool, optional): If true, configure the plot by setting plot extents, drawing coastlines etc. This can be
+                useful when overlaying plots, and you only want to incur the cost of configuring the plot
+                once. The default is True, with the expectation that in most circumstances users will
+                draw any underlying field data before overlaying particle tracks. Default: True.
+            add_colour_bar (bool, optional): If true, draw a colour bar.
+            cb_label (str, optional): The colour bar label.
+            tick_inc (bool, optional): Add coordinate axes (i.e. lat/long).
+            extents (list, optional): Four element numpy array giving lon/lat limits (e.g. [-4.56, -3.76, 49.96, 50.44])
+            draw_coastlines (bool, optional): Draw coastlines. Default False.
+            resolution (str, optional): Resolution to use when plotting the coastline. Only used when draw_coastline=True. Default: '10m'.
+            **kwargs: Additional keyword arguments passed to matplotlib tripcolor
 
-        field : 1D NumPy array
-            The field to plot.
-
-        update : bool, optional
-            If true, update the existing plot. Specifically, the axes will be checked to see if it contains a
-            PolyCollection object, as generated by tripcolor. If found, the associated data array will be
-            updated with the supplied field data. This is faster than drawing a new map
-
-        configure : bool, optional
-            If true, configure the plot by setting plot extents, drawing coastlines etc. This can be
-            useful when overlaying plots, and you only want to incur the cost of configuring the plot
-            once. The default is True, with the expectation that in most circumstances users will
-            draw any underlying field data before overlaying particle tracks. Default: True.
-
-        add_colour_bar : bool, optional
-            If true, draw a colour bar.
-
-        cb_label : str, optional
-            The colour bar label.
-
-        tick_inc : bool, optional
-            Add coordinate axes (i.e. lat/long).
-
-        extents : 1D array, optional
-            Four element numpy array giving lon/lat limits (e.g. [-4.56, -3.76,
-            49.96, 50.44])
-
-        draw_coastlines : boolean, optional
-            Draw coastlines. Default False.
-
-        resolution : str, optional
-            Resolution to use when plotting the coastline. Only used when draw_coastline=True. Default: '10m'.
-
-        Returns
-        -------
-        axes : matplotlib.axes.Axes
-            Axes object
-
-        plot : matplotlib.collections.PolyCollection
-            The plot object
+        Returns:
+            tuple: (axes, plot) - Axes object and PolyCollection plot object
         """
         if update:
             for collection in ax.collections:
@@ -491,56 +431,34 @@ class FVCOMPlotter(PyFVCOM2Plotter):
     ) -> matplotlib.axes.Axes:
         """Produce a quiver plot of the supplied velocity field.
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object on which to plot.
-        u : np.ndarray
-            1D array of u velocity components defined at element centres.
-        v : np.ndarray
-            1D array of v velocity components defined at element centres.
-        configure : bool, optional
-            If True, configure the plot by setting plot extents, drawing coastlines etc. Default: True.
-        update : bool, optional
-            If True, update the existing plot. Specifically, the axes will be checked to see if
-            it contains a Quiver object. If found, the associated data arrays will be
-            updated with the supplied u and v data. This is faster than drawing a new map. Default: False.
-        tick_inc : bool, optional
-            Add coordinate axes (i.e. lat/long). Default: True.
-        extents : np.ndarray, optional
-            Four element numpy array giving lon/lat limits (e.g. [-4.56, -3.76, 49.96, 50.44]).
-            If None, will use default extents from the grid. Default: None.
-        draw_coastlines : bool, optional
-            Draw coastlines. Only used if geographic_coords is True. Default: False.
-        resolution : str, optional
-            Resolution to use when plotting the coastline. Only used when draw_coastlines=True.
-            Default: '10m'.
-        point_res : int, optional
-            Plot every n-th arrow, where n = point_res. Default: 1 (plot every arrow).
-        scale : float, optional
-            Scaling factor for quiver plot. Default: 0.5.
-        quiver_key_x : float, optional
-            X position for quiver key in axes coordinates. Default: 0.9.
-        quiver_key_y : float, optional
-            Y position for quiver key in axes coordinates. Default: 0.9.
-        quiver_key_value : float, optional
-            Reference velocity value for the quiver key. Default: 0.5.
-        quiver_key_label : str, optional
-            Custom label for the quiver key. If None, will use default format. Default: None.
-        **kwargs
-            Additional keyword arguments passed to matplotlib's quiver function.
+        Args:
+            ax (matplotlib.axes.Axes): Axes object on which to plot.
+            u (np.ndarray): 1D array of u velocity components defined at element centres.
+            v (np.ndarray): 1D array of v velocity components defined at element centres.
+            configure (bool, optional): If True, configure the plot by setting plot extents, drawing coastlines etc. Default: True.
+            update (bool, optional): If True, update the existing plot. Specifically, the axes will be checked to see if
+                it contains a Quiver object. If found, the associated data arrays will be
+                updated with the supplied u and v data. This is faster than drawing a new map. Default: False.
+            tick_inc (bool, optional): Add coordinate axes (i.e. lat/long). Default: True.
+            extents (np.ndarray, optional): Four element numpy array giving lon/lat limits (e.g. [-4.56, -3.76, 49.96, 50.44]).
+                If None, will use default extents from the grid. Default: None.
+            draw_coastlines (bool, optional): Draw coastlines. Only used if geographic_coords is True. Default: False.
+            resolution (str, optional): Resolution to use when plotting the coastline. Only used when draw_coastlines=True.
+                Default: '10m'.
+            point_res (int, optional): Plot every n-th arrow, where n = point_res. Default: 1 (plot every arrow).
+            scale (float, optional): Scaling factor for quiver plot. Default: 0.5.
+            quiver_key_x (float, optional): X position for quiver key in axes coordinates. Default: 0.9.
+            quiver_key_y (float, optional): Y position for quiver key in axes coordinates. Default: 0.9.
+            quiver_key_value (float, optional): Reference velocity value for the quiver key. Default: 0.5.
+            quiver_key_label (str, optional): Custom label for the quiver key. If None, will use default format. Default: None.
+            **kwargs: Additional keyword arguments passed to matplotlib's quiver function.
 
-        Returns
-        -------
-        matplotlib.axes.Axes
-            The axes object with the quiver plot.
+        Returns:
+            matplotlib.axes.Axes: The axes object with the quiver plot.
 
-        Raises
-        ------
-        ValueError
-            If u and v arrays have different shapes, are not 1D, or don't match the number of elements.
-        RuntimeError
-            If update=True but no existing Quiver object is found on the axes.
+        Raises:
+            ValueError: If u and v arrays have different shapes, are not 1D, or don't match the number of elements.
+            RuntimeError: If update=True but no existing Quiver object is found on the axes.
         """
         # Validate input arrays
         if u.shape != v.shape:
@@ -617,15 +535,12 @@ class FVCOMPlotter(PyFVCOM2Plotter):
     def draw_grid(self, ax: matplotlib.axes.Axes, **kwargs):
         """Draw the underlying grid or mesh
 
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            Axes object
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            **kwargs: Additional keyword arguments passed to matplotlib triplot
 
-        Returns
-        -------
-        ax : matplotlib.axes.Axes
-            Axes object
+        Returns:
+            matplotlib.axes.Axes: Axes object
         """
         zorder = self._get_zorder()
         ax.triplot(self.tri, zorder=zorder, **kwargs)
@@ -642,28 +557,20 @@ def create_figure(
 ):
     """Create a Figure object
 
-    Parameters
-    ----------
-    figure_size : tuple(float), optional
-        Figure size in cm. This is only used if a new Figure object is
-        created.
-
-    font_size : int
-        Font size to use for axis labels
-
-    axis_position : 1D array, optional
-        Array giving axis dimensions
-
-    projection : ccrs.Projection
-        Cartopy projection to use for the plot. If None, a projection will not be used.
-
-    bg_color : str, optional
-        Colour to use for the axis background. Default is `white`. When
-        creating a figure for plotting FVCOM outputs, it can be useful
-        to set this to `gray`. When FVCOM is fitted to a coastline, the
-        gray areas mark the land boundary used by the model. This provides
-        a fast alternative to plotting a high resolution (e.g. `res` = `f`)
-        land boundary using methods provided by the Basemap class instance.
+    Args:
+        figure_size (tuple, optional): Figure size in cm. This is only used if a new Figure object is created.
+        font_size (int, optional): Font size to use for axis labels
+        axis_position (list, optional): Array giving axis dimensions
+        projection (ccrs.Projection, optional): Cartopy projection to use for the plot. If None, a projection will not be used.
+        bg_color (str, optional): Colour to use for the axis background. Default is `white`. When
+            creating a figure for plotting FVCOM outputs, it can be useful
+            to set this to `gray`. When FVCOM is fitted to a coastline, the
+            gray areas mark the land boundary used by the model. This provides
+            a fast alternative to plotting a high resolution (e.g. `res` = `f`)
+            land boundary using methods provided by the Basemap class instance.
+    
+    Returns:
+        tuple: (figure, axes) - Figure and Axes objects
     """
     figure_size_inches = (cm2inch(figure_size[0]), cm2inch(figure_size[1]))
     figure = plt.figure(figsize=figure_size_inches)
@@ -683,15 +590,11 @@ def create_figure(
 def create_cbar_ax(ax: matplotlib.axes.Axes):
     """Create colorbar axis alligned with plot axis y limits
 
-    Parameters
-    ----------
-    ax : Axes
-        Plot axes instsance
+    Args:
+        ax (matplotlib.axes.Axes): Plot axes instance
 
-    Returns
-    -------
-    cax : Axes
-        Colorbar plot axis
+    Returns:
+        matplotlib.axes.Axes: Colorbar plot axis
     """
     divider = make_axes_locatable(ax)
     return divider.append_axes("right", size="5%", pad=0.05)
@@ -700,15 +603,11 @@ def create_cbar_ax(ax: matplotlib.axes.Axes):
 def cm2inch(value: float) -> float:
     """Convert centimetres to inches.
 
-    Parameters
-    ----------
-    value : float
-        Length in cm.
+    Args:
+        value (float): Length in cm.
 
-    Returns
-    -------
-     : float
-         Length in inches.
+    Returns:
+        float: Length in inches.
     """
     return value / 2.54
 
@@ -718,18 +617,14 @@ def colourmap(variable: str) -> matplotlib.colors.Colormap:
 
     Leverages the cmocean package for perceptually uniform colour maps.
 
-    Parameters
-    ----------
-    variable : str
-        For the given variable name, return the appropriate colour
-        palette from the cmocean/matplotlib colour maps. If the
-        variable is not in the pre-defined variables here, the
-        returned values will be `viridis`.
+    Args:
+        variable (str): For the given variable name, return the appropriate colour
+            palette from the cmocean/matplotlib colour maps. If the
+            variable is not in the pre-defined variables here, the
+            returned values will be `viridis`.
 
-    Returns
-    -------
-    colourmaps : matplotlib.colours.cmap
-        The colour map for the variable given.
+    Returns:
+        matplotlib.colors.Colormap: The colour map for the variable given.
 
     """
 
