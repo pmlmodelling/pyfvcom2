@@ -9,6 +9,10 @@ from netCDF4 import Dataset
 from cftime import num2pydate
 from pyfvcom2.exceptions import PyFVCOM2FileNotFoundError
 
+__all__ = [
+    "find_file"
+]
+
 
 def find_file(
     dir_name: str,

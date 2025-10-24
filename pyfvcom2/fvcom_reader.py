@@ -1,4 +1,8 @@
-"""FVCOM Reader"""
+"""FVCOM data reader for PyFVCOM2"""
+
+__all__ = [
+    "FVCOMReader"
+]
 
 import numpy as np
 from netCDF4 import Dataset

@@ -1,9 +1,12 @@
-"""PyFVCOM2 exceptions
+"""Custom exceptions for PyFVCOM2."""
 
-The intention here is to help callers distinguish between expected
-PyFVCOM2 exceptions and regular python exceptions, which indicate a
-bug in PyFVCOM2's API.
-"""
+__all__ = [
+    "PyFVCOM2RuntimeError",
+    "PyFVCOM2AttributeError",
+    "PyFVCOM2ValueError", 
+    "PyFVCOM2TypeError",
+    "PyFVCOM2FileNotFoundError"
+]
 
 
 class PyFVCOM2Exception(Exception):

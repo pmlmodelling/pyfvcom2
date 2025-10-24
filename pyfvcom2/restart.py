@@ -6,6 +6,10 @@ from datetime import datetime
 import subprocess
 from typing import Optional
 
+__all__ = [
+    "write_restart"
+]
+
 
 def write_restart(
     template_file_path: str,

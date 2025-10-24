@@ -1,5 +1,10 @@
 """Read CMEMS data"""
 
+__all__ = [
+    "CMEMSReader",
+    "CMEMSVariableMap"
+]
+
 import numpy as np
 import xarray as xr
 from scipy import interpolate

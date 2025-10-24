@@ -2,6 +2,11 @@
 
 import numpy as np
 
+__all__ = [
+    "sigma_to_z_coords",
+    "z_to_sigma_coords"
+]
+
 
 def sigma_to_z_coords(
     sigma_coords: np.ndarray, zeta: np.ndarray, bathymetry: np.ndarray
