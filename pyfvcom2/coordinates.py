@@ -99,7 +99,7 @@ def get_epsg_code(lon: float, lat: float, datum: Optional[str] = "WGS 84") -> st
     return utm_crs_list[0].code
 
 
-def utm_from_lonlat(longitude, latitude, epsg_code: Optional = None):
+def utm_from_lonlat(longitude, latitude, epsg_code: Optional[str] = None):
     """Convert lats and lons to UTM coordinates using pyproj.
 
     East Longitudes are positive, west longitudes are negative. North latitudes
@@ -117,16 +117,16 @@ def utm_from_lonlat(longitude, latitude, epsg_code: Optional = None):
     Args:
         longitude (int, float, tuple, list, np.ndarray): Longitudes. Can be a single value or array like.
         latitude (int, float, tuple, list, np.ndarray): Latitudes. Can be a single value or array like.
-        epsg_code (int, str, optional): The EPSG code for the utm transformation.. E.g. 32630.
+        epsg_code (str, optional): The EPSG code for the utm transformation.
 
     Returns:
         tuple: A tuple containing:
             - eastings (numpy.ndarray): Eastings in the supplied reference system.
             - northings (numpy.ndarray): Northings in the supplied reference system.
-            - epsg_code (int): The EPSG code for the utm transformation. E.g., 32630.
+            - epsg_code (str): The EPSG code for the utm transformation.
     """
-    lon = np.asarray(longitude)
-    lat = np.asarray(latitude)
+    lon = np.atleast_1d(longitude)
+    lat = np.atleast_1d(latitude)
 
     # Check the array sizes match
     if np.shape(lon) != np.shape(lat):
@@ -135,12 +135,7 @@ def utm_from_lonlat(longitude, latitude, epsg_code: Optional = None):
     # Use the first longitude and latitude values to determine the EPSG code
     # if it has not been given.
     if epsg_code is None:
-        # Handle scalar case by using .item() to extract scalar value
-        first_lon = lon.item() if lon.ndim == 0 else lon.flat[0]
-        first_lat = lat.item() if lat.ndim == 0 else lat.flat[0]
-        epsg_code = get_epsg_code(first_lon, first_lat)
-    else:
-        epsg_code = int(epsg_code)
+        epsg_code = get_epsg_code(lon[0], lat[0])
 
     utm_crs = CRS.from_epsg(epsg_code)
 
@@ -161,25 +156,23 @@ def lonlat_from_utm(eastings, northings, epsg_code: str):
     Args:
         eastings (int, float, tuple, list, np.ndarray): Eastings. Can be single values or array like.
         northings (int, float, tuple, list, np.ndarray): Northings. Can be single values or array like.
-        epsg_code (int, str): The EPSG code for the utm transformation. E.g. 32630.
+        epsg_code (str): The EPSG code for the utm transformation.
 
     Returns:
         tuple: A tuple containing:
             - lons (numpy.ndarray): Longitudes for the given eastings and northings.
             - lats (numpy.ndarray): Latitudes for the given eastings and northings.
     """
-
-    # Handle scalar inputs by checking shapes instead of using len()
-    if np.shape(eastings) != np.shape(northings):
-        raise PyFVCOM2RuntimeError('Easting and northing array sizes do not match')
-
-    epsg_code = int(epsg_code)
     utm_crs = CRS.from_epsg(epsg_code)
 
     proj = Transformer.from_crs(utm_crs.geodetic_crs, utm_crs, always_xy=True)
 
-    eastings = np.asarray(eastings)
-    northings = np.asarray(northings)
+    eastings = np.atleast_1d(eastings)
+    northings = np.atleast_1d(northings)
+
+    # Handle scalar inputs by checking shapes instead of using len()
+    if np.shape(eastings) != np.shape(northings):
+        raise PyFVCOM2RuntimeError('Easting and northing array sizes do not match')
 
     lons, lats = proj.transform(eastings, northings, direction=pyproj.enums.TransformDirection.INVERSE)
 
