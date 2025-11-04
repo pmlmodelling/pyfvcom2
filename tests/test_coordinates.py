@@ -400,9 +400,9 @@ class TestUtmFromLonlat:
         eastings, northings, epsg = utm_from_lonlat(-2.0, 50.0, epsg_code='32631')
         
         # Verify CRS was created with provided EPSG
-        mock_crs.from_epsg.assert_called_once_with(32631)
+        mock_crs.from_epsg.assert_called_once_with('32631')
         
-        assert epsg == 32631
+        assert epsg == '32631'
     
     def test_mismatched_array_sizes(self):
         """Test error handling for mismatched longitude/latitude array sizes."""
@@ -458,7 +458,7 @@ class TestLonlatFromUtm:
         lons, lats = lonlat_from_utm(500000.0, 5540000.0, '32630')
         
         # Verify CRS was created
-        mock_crs.from_epsg.assert_called_once_with(32630)
+        mock_crs.from_epsg.assert_called_once_with('32630')
         
         # Verify transformer was created
         mock_transformer.from_crs.assert_called_once_with(
