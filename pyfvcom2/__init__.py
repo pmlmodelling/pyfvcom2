@@ -35,6 +35,18 @@ from .mesh_reader import (
     parse_obc_sections,
 )
 
+# Import sigma coordinate functionality
+from .sigma_reader import (
+    SigmaConfig,
+    read_sigma_file,
+    process_sigma_file,
+    write_sigma_file,
+    sigma_generalized,
+    sigma_geometric,
+    sigma_tanh,
+    hybrid_sigma_coordinate,
+)
+
 # Define what gets imported with "from pyfvcom2 import *"
 __all__ = [
     "__version__",
@@ -56,6 +68,15 @@ __all__ = [
     "read_gmsh_mesh",
     "read_fvcom_obc",
     "parse_obc_sections",
+    # Sigma coordinate functionality
+    "SigmaConfig",
+    "read_sigma_file",
+    "process_sigma_file",
+    "write_sigma_file",
+    "sigma_generalized",
+    "sigma_geometric",
+    "sigma_tanh",
+    "hybrid_sigma_coordinate",
     # Subpackages
     "plotting",
 ]
