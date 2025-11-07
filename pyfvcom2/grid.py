@@ -2,6 +2,7 @@ import numpy as np
 from typing import Optional
 
 from .mesh_reader import MeshData
+from .sigma_reader import SigmaData
 from .coordinates import lonlat_from_utm, utm_from_lonlat
 from .exceptions import PyFVCOM2ValueError
 
@@ -24,7 +25,7 @@ class Grid:
         lonc (np.ndarray): Longitude of triangle centroids.
         latc (np.ndarray): Latitude of triangle centroids.
     """
-    def __init__(self, mesh_data: MeshData, coordinate_system: str, epsg_code: Optional[str]=None):
+    def __init__(self, mesh_data: MeshData, sigma_data: SigmaData, coordinate_system: str, epsg_code: Optional[str]=None):
         self.nodes = mesh_data.nodes
         self.triangles = mesh_data.triangles
         self.types_bdy = mesh_data.types_bdy
@@ -46,15 +47,29 @@ class Grid:
         self.yc = nodes2elems(self.y, self.triangles)
         self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, epsg_code)
 
-        if mesh_data.x3 is not None:
-            self.h = mesh_data.x3
-            self.hc = nodes2elems(self.h, self.triangles)
-        else:
-            print("Warning: No bathymetry (z or x3) data found in mesh. Setting bathymetry to zero.")
-            self.h = np.zeros(self.nodes.shape[0])
-            self.hc = nodes2elems(self.h, self.triangles)
-    
-    # Add property decorators for retrieving class attributes
+        # Bathymetry at nodes and elements
+        self.h = mesh_data.x3
+        self.hc = nodes2elems(self.h, self.triangles)
+
+        # Vertical grid
+        # -------------
+        self.sigma_config = sigma_data.sigma_config
+        self.sigma_levels = sigma_data.sigma_levels
+
+        # Create a sigma layer variable (i.e. midpoint in the sigma levels).
+        self.sigma_layers = self.sigma_levels[:, 0:-1] + (np.diff(self.sigma_levels, axis=1) / 2)
+
+        # Create a sigma layer variable (i.e. midpoint in the sigma levels).
+        self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
+        self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
+
+        # Depth levels in z coordinates
+        self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
+        self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
+        self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
+        self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
+
+    # Add roperty decorators for retrieving class attributes
     @property
     def n_nodes(self):
         """Get the number of nodes in the mesh."""
@@ -63,6 +78,17 @@ class Grid:
     def n_elements(self):
         """Get the number of elements in the mesh."""
         return self.triangles.shape[0]
+    
+    @property
+    def n_sigma_levels(self):
+        """Get the number of sigma levels in the vertical grid."""
+        return self.sigma_levels.shape[1]
+
+    @property
+    def n_sigma_layers(self):
+        """Get the number of sigma layers in the vertical grid."""
+        return self.sigma_layers.shape[1]
+
     @property
     def bathy_nodes(self):
         """Get the bathymetry values at nodes."""
