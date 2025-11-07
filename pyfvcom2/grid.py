@@ -1,0 +1,299 @@
+import numpy as np
+from typing import Optional
+
+from .mesh_reader import MeshData
+from .coordinates import lonlat_from_utm, utm_from_lonlat
+from .exceptions import PyFVCOM2ValueError
+
+
+class Grid:
+    """
+    A class to represent a triangular mesh
+
+    Attributes:
+        nodes (np.ndarray): Nx2 array of node coordinates.
+        triangles (np.ndarray): Mx3 array of triangle vertex indices.
+        x (np.ndarray): x coordinates of nodes.
+        y (np.ndarray): y coordinates of nodes.
+        h (np.ndarray): bathymetry at nodes.
+        xc (np.ndarray): x coordinates of triangle centroids.
+        yc (np.ndarray): y coordinates of triangle centroids.
+        hc (np.ndarray): bathymetry at triangle centroids.
+        lon (np.ndarray): Longitude of nodes.
+        lat (np.ndarray): Latitude of nodes.
+        lonc (np.ndarray): Longitude of triangle centroids.
+        latc (np.ndarray): Latitude of triangle centroids.
+    """
+    def __init__(self, mesh_data: MeshData, coordinate_system: str, epsg_code: Optional[str]=None):
+        self.nodes = mesh_data.nodes
+        self.triangles = mesh_data.triangles
+        self.types_bdy = mesh_data.types_bdy
+        self.nodes_bdy = mesh_data.nodes_bdy
+
+        if coordinate_system == "cartesian":
+            self.x = mesh_data.x1
+            self.y = mesh_data.x2
+            self.lon, self.lat = lonlat_from_utm(self.x, self.y, epsg_code)
+        elif coordinate_system == "geographic":
+            self.lon = mesh_data.x1
+            self.lat = mesh_data.x2
+            self.x, self.y = utm_from_lonlat(self.lon, self.lat, epsg_code)
+        else:
+            raise PyFVCOM2ValueError("coordinate_system must be either 'cartesian' or 'geographic'")
+
+        # Element centre coordinates 
+        self.xc = nodes2elems(self.x, self.triangles)
+        self.yc = nodes2elems(self.y, self.triangles)
+        self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, epsg_code)
+
+        if mesh_data.x3 is not None:
+            self.h = mesh_data.x3
+            self.hc = nodes2elems(self.h, self.triangles)
+        else:
+            print("Warning: No bathymetry (z or x3) data found in mesh. Setting bathymetry to zero.")
+            self.h = np.zeros(self.nodes.shape[0])
+            self.hc = nodes2elems(self.h, self.triangles)
+    
+    # Add property decorators for retrieving class attributes
+    @property
+    def n_nodes(self):
+        """Get the number of nodes in the mesh."""
+        return self.nodes.shape[0]
+    @property
+    def n_elements(self):
+        """Get the number of elements in the mesh."""
+        return self.triangles.shape[0]
+    @property
+    def bathy_nodes(self):
+        """Get the bathymetry values at nodes."""
+        return self.h
+    @property
+    def bathy_elements(self):
+        """Get the bathymetry values at element centroids."""
+        return self.hc
+
+
+
+def connectivity(p, t):
+    """
+    Assemble connectivity data for a triangular mesh.
+
+    The edge based connectivity is built for a triangular mesh and the boundary
+    nodes identified. This data should be useful when implementing FE/FV
+    methods using triangular meshes.
+
+    Args:
+    p : np.ndarray
+        Nx2 array of nodes coordinates, [[x1, y1], [x2, y2], etc.]
+    t : np.ndarray
+        Mx3 array of triangles as indices, [[n11, n12, n13], [n21, n22, n23],
+        etc.]
+
+    Returns:
+    e : np.ndarray
+        Kx2 array of unique mesh edges - [[n11, n12], [n21, n22], etc.]
+    te : np.ndarray
+        Mx3 array of triangles as indices into e, [[e11, e12, e13], [e21, e22,
+        e23], etc.]
+    e2t : np.ndarray
+        Kx2 array of triangle neighbours for unique mesh edges - [[t11, t12],
+        [t21, t22], etc]. Each row has two entries corresponding to the
+        triangle numbers associated with each edge in e. Boundary edges have
+        e2t[i, 1] = -1.
+    bnd : np.ndarray, bool
+        Nx1 logical array identifying boundary nodes. p[i, :] is a boundary
+        node if bnd[i] = True.
+
+    Notes:
+    Python translation of the MATLAB MESH2D connectivity function by Darren
+    Engwirda. See: https://github.com/dengwirda/MESH2D. Code translated by
+    Pierre Cazenave, PML.
+
+    References:
+    .. [1] Darren Engwirda, Locally-optimal Delaunay-refinement and optimisation-based
+    mesh generation, Ph.D. Thesis, School of Mathematics and Statistics,
+    The University of Sydney, September 2014.
+
+    """
+
+    def _unique_rows(A, return_index=False, return_inverse=False):
+        """
+        Similar to MATLAB's unique(A, 'rows'), this returns B, I, J
+        where B is the unique rows of A and I and J satisfy
+        A = B[J, :] and B = A[I, :]
+
+        Returns I if return_index is True
+        Returns J if return_inverse is True
+
+        Taken from https://github.com/numpy/numpy/issues/2871
+
+        """
+        A = np.require(A, requirements="C")
+        assert A.ndim == 2, "array must be 2-dim'l"
+
+        B = np.unique(
+            A.view([("", A.dtype)] * A.shape[1]),
+            return_index=return_index,
+            return_inverse=return_inverse,
+        )
+
+        if return_index or return_inverse:
+            return (B[0].view(A.dtype).reshape((-1, A.shape[1]), order="C"),) + B[1:]
+        else:
+            return B.view(A.dtype).reshape((-1, A.shape[1]), order="C")
+
+    if p.shape[-1] != 2:
+        raise Exception("p must be an Nx2 array")
+    if t.shape[-1] != 3:
+        raise Exception("t must be an Mx3 array")
+    if np.any(t.ravel() < 0) or t.max() > p.shape[0] - 1:
+        raise Exception("Invalid t")
+
+    # Unique mesh edges as indices into p
+    numt = t.shape[0]
+    # Triangle indices
+    vect = np.arange(numt)
+    # Edges - not unique
+    e = np.vstack(([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]]))
+    # Unique edges
+    e, j = _unique_rows(np.sort(e, axis=1), return_inverse=True)
+    # Unique edges in each triangle
+    te = np.column_stack((j[vect], j[vect + numt], j[vect + (2 * numt)]))
+
+    # Edge-to-triangle connectivity
+    # Each row has two entries corresponding to the triangle numbers
+    # associated with each edge. Boundary edges have e2t[i, 1] = -1.
+    nume = e.shape[0]
+    e2t = np.zeros((nume, 2)).astype(int) - 1
+    for k in range(numt):
+        for j in range(3):
+            ce = te[k, j]
+            if e2t[ce, 0] == -1:
+                e2t[ce, 0] = k
+            else:
+                e2t[ce, 1] = k
+
+    # Flag boundary nodes
+    bnd = np.zeros((p.shape[0],)).astype(bool)
+    # True for bnd nodes
+    bnd[e[e2t[:, 1] == -1, :]] = True
+
+    return e, te, e2t, bnd
+
+
+def find_connected_nodes(n, triangles):
+    """Return the IDs of the nodes surrounding node number `n'.
+
+    Args:
+    n : int
+        Node ID around which to find the connected nodes.
+    triangles : np.ndarray
+        Triangulation matrix to find the connected nodes. Shape is [nele,
+        3].
+
+    Returns
+    -------
+    surroundingidx : np.ndarray
+        Indices of the surrounding nodes.
+
+    See Also
+    --------
+    PyFVCOM.grid.find_connected_elements().
+
+    Notes
+    -----
+
+    Check it works with:
+    >>> import matplotlib.pyplot as plt
+    >>> import numpy as np
+    >>> from scipy.spatial import Delaunay
+    >>> x, y = np.meshgrid(np.arange(25), np.arange(100, 125))
+    >>> x = x.flatten() + np.random.randn(x.size) * 0.1
+    >>> y = y.flatten() + np.random.randn(y.size) * 0.1
+    >>> tri = Delaunay(np.array((x, y)).transpose())
+    >>> for n in np.linspace(1, len(x) - 1, 5).astype(int):
+    ...     aa = surrounders(n, tri.vertices)
+    ...     plt.figure()
+    ...     plt.triplot(x, y, tri.vertices, zorder=20, alpha=0.5)
+    ...     plt.plot(x[n], y[n], 'ro', label='central node')
+    ...     plt.plot(x[aa], y[aa], 'ko', label='connected nodes')
+    ...     plt.xlim(x[aa].min() - 1, x[aa].max() + 1)
+    ...     plt.ylim(y[aa].min() - 1, y[aa].max() + 1)
+    ...     plt.legend(numpoints=1)
+
+    """
+
+    eidx = np.max((np.abs(triangles - n) == 0), axis=1)
+    surroundingidx = np.unique(triangles[eidx][triangles[eidx] != n])
+
+    return surroundingidx
+
+
+def find_connected_elements(n, triangles):
+    """
+    Return the IDs of the elements connected to node number `n'.
+
+    Parameters
+    ----------
+    n : int or iterable
+        Node ID(s) around which to find the connected elements. If more than
+        one node is given, the unique elements for all nodes are returned.
+        Order of results is not maintained.
+    triangles : np.ndarray
+        Triangulation matrix to find the connected elements. Shape is [nele,
+        3].
+
+    Returns
+    -------
+    surroundingidx : np.ndarray
+        Indices of the surrounding elements.
+
+    See Also
+    --------
+    PyFVCOM.grid.find_connected_nodes().
+
+    """
+
+    try:
+        surroundingidx = []
+        for ni in n:
+            idx = np.argwhere(triangles == ni)[:, 0]
+            surroundingidx.append(idx)
+        surroundingidx = np.asarray(
+            [item for sublist in surroundingidx for item in sublist]
+        )
+        surroundingidx = np.unique(surroundingidx)
+    except TypeError:
+        surroundingidx = np.argwhere(triangles == n)[:, 0]
+
+    return surroundingidx
+
+
+def nodes2elems(nodes, tri):
+    """
+    Calculate an element-centre value based on the average value for the
+    nodes from which it is formed. This involves an average, so the
+    conversion from nodes to elements cannot be reversed without smoothing.
+
+    Parameters
+    ----------
+    nodes : np.ndarray
+        Array of unstructured grid node values to move to the element
+        centres.
+    tri : np.ndarray
+        Array of shape (nelem, 3) comprising the list of connectivity
+        for each element.
+
+    Returns
+    -------
+    elems : np.ndarray
+        Array of values at the grid nodes.
+
+    """
+
+    if np.ndim(nodes) == 1:
+        elems = nodes[tri].mean(axis=-1)
+    else:
+        elems = nodes[..., tri].mean(axis=-1)
+
+    return elems
