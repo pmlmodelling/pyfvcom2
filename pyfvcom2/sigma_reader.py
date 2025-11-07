@@ -45,6 +45,18 @@ class SigmaConfig(NamedTuple):
     zkl: Optional[np.ndarray] = None
 
 
+class SigmaData(NamedTuple):
+    """Named tuple containing sigma coordinate data.
+
+    Attrs:
+        sigma_config: Sigma configuration parameters.
+        sigma_levels: 2D array of sigma levels at each node.
+    """
+
+    sigma_config: SigmaConfig
+    sigma_levels: np.ndarray
+
+
 def read_sigma_file(filepath: str) -> SigmaConfig:
     """Read in a sigma coordinates file and return parsed configuration.
 
@@ -123,7 +135,7 @@ def read_sigma_file(filepath: str) -> SigmaConfig:
     )
 
 
-def process_sigma_file(filepath: str, h: np.ndarray, hc: np.ndarray):
+def process_sigma_file(filepath: str, h: np.ndarray, hc: np.ndarray) -> SigmaData:
     """Read in a sigma coordinates file and generate sigma coordinate parameters.
 
     Args:
@@ -132,8 +144,8 @@ def process_sigma_file(filepath: str, h: np.ndarray, hc: np.ndarray):
         hc: Bathymetry at element centroids.
 
     Returns:
-        tuple: A tuple containing:
-            - config (SigmaConfig): Sigma configuration as read from file.
+        SigmaData: A named tuple containing:
+            - sigma_config (SigmaConfig): Sigma configuration as read from file.
             - sigma_levels (np.ndarray): Sigma levels at each node.
     """
     config = read_sigma_file(filepath)
@@ -181,7 +193,10 @@ def process_sigma_file(filepath: str, h: np.ndarray, hc: np.ndarray):
             "Unrecognised sigtype " + "{} (is it supported?)".format(config.sigtype)
         )
 
-    return config, sigma_levels
+    return SigmaData(
+        sigma_config=config,
+        sigma_levels=sigma_levels
+    )
 
 
 def write_sigma_file(sigma_config: SigmaConfig, sigma_file: str):
@@ -383,7 +398,7 @@ def hybrid_sigma_coordinate(
     total_upper_layers: int,
     total_lower_layers: int,
     h: np.ndarray,
-):
+) -> SigmaData:
     """Create a hybrid vertical coordinate system.
 
     Args:
@@ -396,7 +411,7 @@ def hybrid_sigma_coordinate(
         h: Water depth at nodes.
 
     Returns:
-        tuple: A tuple containing:
+        SigmaData: A named tuple containing:
             - sigma_config (SigmaConfig): Configuration for the sigma coordinate system.
             - sigma_levels (np.ndarray): Sigma levels at each node.
     """
@@ -458,7 +473,10 @@ def hybrid_sigma_coordinate(
         zkl=lower_layer_thickness,
     )
 
-    return sigma_config, sigma_levels
+    return SigmaData(
+        sigma_config=sigma_config,
+        sigma_levels=sigma_levels
+    )
 
 
 def _hybrid_coordinate_hmin(
