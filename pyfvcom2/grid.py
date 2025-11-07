@@ -25,7 +25,14 @@ class Grid:
         lonc (np.ndarray): Longitude of triangle centroids.
         latc (np.ndarray): Latitude of triangle centroids.
     """
-    def __init__(self, mesh_data: MeshData, sigma_data: SigmaData, coordinate_system: str, epsg_code: Optional[str]=None):
+
+    def __init__(
+        self,
+        mesh_data: MeshData,
+        sigma_data: SigmaData,
+        coordinate_system: str,
+        epsg_code: Optional[str] = None,
+    ):
         self.nodes = mesh_data.nodes
         self.triangles = mesh_data.triangles
         self.types_bdy = mesh_data.types_bdy
@@ -40,9 +47,11 @@ class Grid:
             self.lat = mesh_data.x2
             self.x, self.y = utm_from_lonlat(self.lon, self.lat, epsg_code)
         else:
-            raise PyFVCOM2ValueError("coordinate_system must be either 'cartesian' or 'geographic'")
+            raise PyFVCOM2ValueError(
+                "coordinate_system must be either 'cartesian' or 'geographic'"
+            )
 
-        # Element centre coordinates 
+        # Element centre coordinates
         self.xc = nodes2elems(self.x, self.triangles)
         self.yc = nodes2elems(self.y, self.triangles)
         self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, epsg_code)
@@ -57,7 +66,9 @@ class Grid:
         self.sigma_levels = sigma_data.sigma_levels
 
         # Create a sigma layer variable (i.e. midpoint in the sigma levels).
-        self.sigma_layers = self.sigma_levels[:, 0:-1] + (np.diff(self.sigma_levels, axis=1) / 2)
+        self.sigma_layers = self.sigma_levels[:, 0:-1] + (
+            np.diff(self.sigma_levels, axis=1) / 2
+        )
 
         # Create a sigma layer variable (i.e. midpoint in the sigma levels).
         self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
@@ -74,11 +85,12 @@ class Grid:
     def n_nodes(self):
         """Get the number of nodes in the mesh."""
         return self.nodes.shape[0]
+
     @property
     def n_elements(self):
         """Get the number of elements in the mesh."""
         return self.triangles.shape[0]
-    
+
     @property
     def n_sigma_levels(self):
         """Get the number of sigma levels in the vertical grid."""
@@ -93,11 +105,11 @@ class Grid:
     def bathy_nodes(self):
         """Get the bathymetry values at nodes."""
         return self.h
+
     @property
     def bathy_elements(self):
         """Get the bathymetry values at element centroids."""
         return self.hc
-
 
 
 def connectivity(p, t):
