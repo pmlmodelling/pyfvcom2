@@ -8,11 +8,74 @@ from pyproj import Transformer
 from pyproj.database import query_utm_crs_info
 from pyproj.aoi import AreaOfInterest
 
-
 from pyfvcom2.exceptions import PyFVCOM2ValueError, PyFVCOM2RuntimeError
 
 
-__all__ = ["sigma_to_z_coords", "z_to_sigma_coords", "get_epsg_code", "utm_from_lonlat", "lonlat_from_utm"]
+__all__ = ["sigma_to_z_coords", "z_to_sigma_coords", "get_epsg_code", "utm_from_lonlat", "lonlat_from_utm", "cart2pol", "pol2cart"]
+
+
+def cart2pol(x: np.ndarray, y: np.ndarray, degrees: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Convert from cartesian to polar coordinates.
+    
+    Args:
+        x: X-coordinates (cartesian). Can be scalar or array-like.
+        y: Y-coordinates (cartesian). Can be scalar or array-like.
+        degrees: If True, return angles in degrees (0-360°), 
+                otherwise in radians (-π to π). Defaults to False.
+    
+    Returns:
+        Tuple containing:
+            - rho: Radial distances from origin.
+            - phi: Angles from positive x-axis. In radians (-π to π) by default,
+                  or degrees (0-360°) if degrees=True.
+    
+    Raises:
+        PyFVCOM2ValueError: If x and y arrays have different shapes.
+    """
+    x = np.asarray(x)
+    y = np.asarray(y)
+    
+    if x.shape != y.shape:
+        raise PyFVCOM2ValueError("x and y arrays must have the same shape")
+    
+    rho = np.sqrt(x**2 + y**2)
+    phi = np.arctan2(y, x)
+    
+    if degrees:
+        phi = np.mod(np.rad2deg(phi), 360)
+    
+    return (rho, phi)
+
+
+def pol2cart(rho: np.ndarray, phi: np.ndarray, degrees: bool = False) -> tuple[np.ndarray, np.ndarray]:
+    """Convert from polar to cartesian coordinates.
+    
+    Args:
+        rho: Radial distances from origin. Can be scalar or array-like.
+        phi: Angles from positive x-axis. Can be scalar or array-like.
+        degrees: If True, input angles are in degrees, otherwise in radians. 
+                Defaults to False.
+    
+    Returns:
+        Tuple containing:
+            - x: X-coordinates (cartesian).
+            - y: Y-coordinates (cartesian).
+    
+    Raises:
+        PyFVCOM2ValueError: If rho and phi arrays have different shapes.
+    """
+    rho = np.asarray(rho)
+    phi = np.asarray(phi)
+    
+    if rho.shape != phi.shape:
+        raise PyFVCOM2ValueError("rho and phi arrays must have the same shape")
+    
+    if degrees:
+        phi = np.deg2rad(phi)
+
+    x = rho * np.cos(phi)
+    y = rho * np.sin(phi)
+    return (x, y)
 
 
 def sigma_to_z_coords(
