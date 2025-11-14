@@ -7,12 +7,74 @@ from .coordinates import lonlat_from_utm, utm_from_lonlat
 from .exceptions import PyFVCOM2ValueError
 
 
-class Grid:
+class OpenBoundary:
+    """Represents an open boundary in the mesh.
+
+    Args:
+        bdy_id: Unique identifier for the boundary.
+        node_indices: Array of node indices that form this boundary.
+        sigma_levels: Sigma level coordinates for boundary nodes.
+        sigma_layers: Sigma layer coordinates for boundary nodes.
     """
-    A class to represent a triangular mesh
+    
+    def __init__(self, bdy_id: int, node_indices: np.ndarray, 
+                 sigma_levels: np.ndarray, sigma_layers: np.ndarray):
+        self._bdy_id = bdy_id
+        self._node_indices = node_indices
+        self._sigma_levels = sigma_levels
+        self._sigma_layers = sigma_layers
+
+    @property
+    def bdy_id(self) -> int:
+        """Get the boundary ID.
+        
+        Returns:
+            Unique identifier for this boundary.
+        """
+        return self._bdy_id
+
+    @property
+    def nnodes(self) -> int:
+        """Get the number of nodes in this boundary.
+        
+        Returns:
+            Number of nodes that form this boundary.
+        """
+        return len(self._node_indices)
+
+    @property
+    def node_indices(self) -> np.ndarray:
+        """Get the node indices for this boundary.
+        
+        Returns:
+            Array of node indices that form this boundary.
+        """
+        return self._node_indices
+
+    @property
+    def sigma_levels(self) -> np.ndarray:
+        """Get sigma levels for boundary nodes.
+        
+        Returns:
+            Sigma level coordinates for boundary nodes.
+        """
+        return self._sigma_levels
+
+    @property
+    def sigma_layers(self) -> np.ndarray:
+        """Get sigma layers for boundary nodes.
+        
+        Returns:
+            Sigma layer coordinates for boundary nodes.
+        """
+        return self._sigma_layers
+
+
+class Grid:
+    """A class to represent a triangular mesh.
 
     Attributes:
-        nodes (np.ndarray): Nx2 array of node coordinates.
+        nodes (np.ndarray): N array of node coordinates.
         triangles (np.ndarray): Mx3 array of triangle vertex indices.
         x (np.ndarray): x coordinates of nodes.
         y (np.ndarray): y coordinates of nodes.
@@ -24,6 +86,7 @@ class Grid:
         lat (np.ndarray): Latitude of nodes.
         lonc (np.ndarray): Longitude of triangle centroids.
         latc (np.ndarray): Latitude of triangle centroids.
+        open_boundaries[OpenBoundary]): List of open boundary objects.
     """
 
     def __init__(
@@ -79,6 +142,26 @@ class Grid:
         self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
         self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
         self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
+
+        # Open boundaries
+        # ---------------
+        self.open_boundaries = []
+        for bdy_id, bdy_nodes in enumerate(mesh_data.nodes_bdy):
+            # Convert to numpy array if it isn't already
+            bdy_node_indices = np.asarray(bdy_nodes)
+            
+            # Extract sigma levels and layers for boundary nodes
+            bdy_sigma_levels = self.sigma_levels[bdy_node_indices, :]
+            bdy_sigma_layers = self.sigma_layers[bdy_node_indices, :]
+            
+            # Create OpenBoundary object
+            open_boundary = OpenBoundary(
+                bdy_id=bdy_id,
+                node_indices=bdy_node_indices,
+                sigma_levels=bdy_sigma_levels,
+                sigma_layers=bdy_sigma_layers
+            )
+            self.open_boundaries.append(open_boundary)
 
     # Add roperty decorators for retrieving class attributes
     @property
