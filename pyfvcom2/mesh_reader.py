@@ -7,7 +7,7 @@ from .exceptions import PyFVCOM2ValueError, PyFVCOM2FileNotFoundError
 # Define the public API of this module
 __all__ = [
     "MeshData",
-    "read_mesh",
+    "read_mesh_file",
     "read_sms_mesh", 
     "read_fvcom_mesh",
     "read_smesh_mesh",
@@ -62,7 +62,7 @@ def _safe_open(filename: str, mode: str = "r"):
         raise PyFVCOM2FileNotFoundError(f"Could not open mesh file: {filename}") from e
 
 
-def read_mesh(filename: str, mesh_type: str, **kwargs) -> MeshData:
+def read_mesh_file(filename: str, mesh_type: str, **kwargs) -> MeshData:
     """
     Factory method to read mesh files of various formats.
 
