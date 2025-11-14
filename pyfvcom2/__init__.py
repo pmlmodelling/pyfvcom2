@@ -25,7 +25,7 @@ from .exceptions import (
 # Import mesh reading functionality
 from .mesh_reader import (
     MeshData,
-    read_mesh,
+    read_mesh_file,
     read_sms_mesh,
     read_fvcom_mesh,
     read_smesh_mesh,
@@ -60,7 +60,7 @@ __all__ = [
     "PyFVCOM2TypeError",
     # Mesh reading functionality
     "MeshData",
-    "read_mesh",
+    "read_mesh_file",
     "read_sms_mesh",
     "read_fvcom_mesh",
     "read_smesh_mesh",
