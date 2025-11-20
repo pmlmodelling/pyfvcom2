@@ -3,7 +3,6 @@
 from typing import Optional
 import numpy as np
 from netCDF4 import Dataset
-import stripy as stripy
 
 import matplotlib
 from matplotlib import pyplot as plt
