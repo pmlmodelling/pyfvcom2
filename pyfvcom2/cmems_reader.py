@@ -14,6 +14,14 @@ from pyfvcom2.exceptions import PyFVCOM2ValueError
 CMEMSVariableMap = namedtuple("CMEMSVariableMap", "cmems_name fvcom_name grid_position")
 
 
+# Default mapping of FVCOM variable names to CMEMS variable names
+default_fvcom_to_cmems_var_names = {'temp': 'thetao',
+                                    'salt': 'so',
+                                    'u': 'uo',
+                                    'v': 'vo',
+                                    'zeta': 'zos'}
+
+
 class CMEMSReader:
     """Class to read CMEMS Data files"""
 
