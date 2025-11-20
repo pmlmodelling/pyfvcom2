@@ -154,6 +154,10 @@ class CMEMSReader:
         return self.dataset.sizes[self.depth_dim_name]
 
     @property
+    def dates(self):
+        return self.dataset[self.time_dim_name].data
+
+    @property
     def lons(self):
         return self.dataset.variables[f"{self.lon_dim_name}"][:]
 
@@ -183,6 +187,35 @@ class CMEMSReader:
             raise PyFVCOM2ValueError("The dataset does not have a depth dimension.")
 
         return -self.dataset.variables[f"{self.depth_dim_name}"][:].values
+
+    def contains_date(self, date_time) -> bool:
+        """Check if the dataset contains the given date_time.
+
+        Args:
+            date_time (datetime): Date time to check.
+        Returns:
+            bool: True if date_time is within the dataset time range, False otherwise.
+        """
+        dates = self.dates
+        if len(dates) == 0:
+            return False
+
+        start_date = dates[0]
+        end_date = dates[-1]
+
+        return start_date <= date_time <= end_date
+
+    def closest_date_index(self, date_time) -> int:
+        """Get the index of the datetime variable closest to the given date_time.
+
+        Args:
+            date_time (datetime): Date time to find closest index for.
+        Returns:
+            int: Index of the closest time variable.
+        """
+        time_diffs = [abs((dt - date_time).total_seconds()) for dt in self.dates]
+        closest_date_index = time_diffs.index(min(time_diffs))
+        return closest_date_index
 
     def get_var_ndims(self, var_name: str) -> int:
         """Get the number of dimensions of a variable.
