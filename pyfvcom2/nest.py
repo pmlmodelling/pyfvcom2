@@ -1,8 +1,18 @@
+import os
 import numpy as np
+from datetime import datetime
+from typing import Optional
 
+from pyfvcom2.fvcom_writer import FVCOMWriter
+
+from .version import full_version
+from .interpolation import InterpolationCoordinates, Interpolator
 from .weights_calculator import get_weights_calculator
 from .grid import Grid, OpenBoundary
 from .grid import find_connected_elements
+from .coordinates import sigma_to_z_coords
+from .ocean import zbar
+from .exceptions import PyFVCOM2ValueError
 
 
 class GridBand:
@@ -110,18 +120,40 @@ class NestManager:
     - Need to add on tide data if needed, and may need a tide manager class.
     - Will then just need to implement a method which writes all the nest forcing data to file.
     """
-    def __init__(self, grid: Grid, weights_calculation_method: str = 'linear'):
-        self._grid_ref = grid # Reference to the full grid
+    def __init__(self, dates: list[datetime], grid: Grid, num_grid_bands=1,
+                 weights_calculation_method: str='linear'):
+        self._dates = dates
+        self._grid_ref = grid
+
+        # Make nests
         self.nests = []
-        self.forcing_data = {}
-        self.weights_calculator = get_weights_calculator(weights_calculation_method)
+        self.make_nests(num_grid_bands)
+
+        # Method for calculating the weight of different grid bands
+        self._weights_calculator = get_weights_calculator(weights_calculation_method)
+
+        # Initialise empty dict to hold forcing data        
+        self._forcing_data = {}
+
+    def set_dates(self, dates: list[datetime]) -> None:
+        """ Set the dates for the forcing data
+
+        Args:
+            dates: List of datetime objects.
+        """
+        print(f'Updating NestManager dates and purging old forcing data for the previous dates.')
+        print(f'Previous dates: {self._dates}')
+        print(f'New dates: {dates}')
+
+        self._forcing_data = {}
+        self._dates = dates
 
     def clear_nests(self) -> None:
         """ Clear all nests from the manager """
         self.nests = []
         self.foricing_data = {}
 
-    def make_nests(self, grid: Grid, num_grid_bands: int) -> None:
+    def make_nests(self, num_grid_bands: int) -> None:
         """ Make nests for each open boundary in the grid
         
         Args:
@@ -138,7 +170,7 @@ class NestManager:
         all_elements = []
 
         # Create new nest objects for each open boundary
-        for ob in grid.open_boundaries:
+        for ob in self._grid_ref.open_boundaries:
             nest = Nest(open_boundary=ob)
 
             # Set of nodes that are used to locate elements in the next grid band. When beginning
@@ -150,13 +182,13 @@ class NestManager:
                 # First, find the elements that make up the grid band adjoining the current, inner
                 # most set of nodes in the nest. If no grid bands have been added yet, this will
                 # be the nodes that define the open boundary.
-                elements = find_connected_elements(reference_nodes, grid.triangles) 
+                elements = find_connected_elements(reference_nodes, self._grid_ref.triangles)
 
                 # Only use unique elements that have not already been used in previous grid bands
                 unique_elements = np.setdiff1d(elements, all_elements).tolist()
 
                 # Get the nodes connected to the elements we've extracted.
-                nodes = np.unique(grid.triangles[unique_elements, :])
+                nodes = np.unique(self._grid_ref.triangles[unique_elements, :])
 
                 # Remove ones we already have in the nest.
                 unique_nodes = np.setdiff1d(nodes, all_nodes).tolist()
@@ -267,12 +299,310 @@ class NestManager:
 
         return np.array(all_element_weights, dtype=np.float32)
 
+    def get_interpolation_coordinates(self, grid_position: str) -> InterpolationCoordinates:
+        """Get interpolation coordinates for a specific grid position.
 
-class NestForcingCalculator:
-    """ Class to calculate forcing data for nests """
-    pass
+        Args:
+            grid_position: The grid position ('node' or 'element') for which to retrieve
+            interpolation coordinates.
 
+        Returns:
+            InterpolationCoordinates: The interpolation coordinates for the specified grid position.
+        """
+        if grid_position not in ['node', 'element']:
+            raise ValueError("grid_position must be either 'node' or 'element'")
 
-class NestForcingWriter:
-    """ Class to write nest forcing data to file """
-    pass
+        if grid_position == 'node':
+            indices = self.get_all_nest_nodes()
+            lons = self._grid_ref.lon_nodes[indices]
+            lats = self._grid_ref.lat_nodes[indices]
+            sigma_layers = self._grid_ref.sigma_layers_nodes[:, indices]
+            bathy = self._grid_ref.bathy_nodes[indices]
+        else:  # grid_position == 'element'
+            indices = self.get_all_nest_elements()
+            lons = self._grid_ref.lon_elements[indices]
+            lats = self._grid_ref.lat_elements[indices]
+            sigma_layers = self._grid_ref.sigma_layers_elements[:, indices]
+            bathy = self._grid_ref.bathy_elements[indices]
+
+        # Ignore temporal variations in zeta and set it to zero. This is just to get the actual depth
+        # of sigma levels/layers for interpolating vertically. Given CMEMS data has already been interpolated
+        # onto fixed depth levels, I think this simplification is acceptable.
+        zeta = np.zeros_like(bathy)
+
+        # Compute depths
+        depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
+
+        return InterpolationCoordinates(self.dates, depths, lons, lats, depths)
+
+    def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, grid_position: str) -> None:
+        """ Add forcing data for the nests
+
+        Args:
+            interpolator: Interpolator instance to use for interpolation.
+            fvcom_var_name: FVCOM name for the forcing variable.
+            grid_position: The grid position ('node' or 'element') for which to add forcing data.
+        """
+        interpolation_coords = self.get_interpolation_coordinates(grid_position)
+        forcing_data = interpolator.interpolate(interpolation_coords, fvcom_var_name)
+        self._forcing_data[fvcom_var_name] = forcing_data
+
+        # For velocities, calculate the vertically averaged component
+        if fvcom_var_name in ['u', 'v']:
+            layer_thickness = (self._grid_ref.sigma_levels.T[0:-1, :] - self._grid_ref.sigma_levels.T[1:, :])
+            self._forcing_data[f'{fvcom_var_name}a'] = zbar(forcing_data, layer_thickness)
+
+    def create_forcing_file(self, output_path: str, type: int, format='NETCDF4', **kwargs) -> None:
+        """ Write the nest forcing data to a NetCDF file
+
+        Args:
+            output_path: Path to the output NetCDF file.
+            type: Type of model nesting.
+            format: NetCDF format to use. Defaults to 'NETCDF4'.
+            **kwargs: Additional keyword arguments for writing the forcing file.
+        """
+        ncfile = os.path.basename(output_path)
+
+        nodes = self.get_all_nest_nodes()
+        elements = self.get_all_nest_elements()
+        
+        # Counters
+        n_dates = len(self._dates)
+        n_nodes = len(nodes)
+        n_elements = len(elements)
+        n_sigma_layers = self._grid_ref.n_sigma_layers
+        n_sigma_levels = self._grid_ref.n_sigma_levels
+
+        # Prepare the data.
+        hyw = np.zeros((n_dates, n_sigma_levels, n_nodes)) # Always zero, for now at least
+
+        # Set weights if bdy type is 3 
+        if type == 3:
+            node_weights = self.get_all_node_weights()
+            node_weights = np.tile(node_weights, [n_dates, 1])
+            
+            element_weights = self.get_all_element_weights()
+            element_weights = np.tile(element_weights, [n_dates, 1])
+        else:
+            node_weights = None
+            element_weights = None
+
+        # Options for compression etc.
+        if 'ncopts' in kwargs:
+            ncopts = kwargs.pop('ncopts')
+        else:
+            ncopts = {}
+
+        # Define the global attributes
+        globals = {'type': 'FVCOM nestING TIME SERIES FILE',
+                   'title': f'FVCOM nestING TYPE {type} TIME SERIES data for open boundary',
+                   'history': f'File created using PyFVCOM2 version {full_version}',
+                   'filename': str(ncfile),
+                   'Conventions': 'CF-1.0'}
+
+        # Dimensions
+        dims = {'nele': n_elements, 'node': n_nodes, 'time': 0, 
+                'DateStrLen': 26, 'three': 3,
+                'siglay': n_sigma_layers, 'siglev': n_sigma_levels}
+
+        with FVCOMWriter(str(ncfile), dims, global_attributes=globals, 
+                clobber=True, format=format, **kwargs) as nest_ncfile:
+
+            # Add standard times
+            # ------------------
+            nest_ncfile.write_fvcom_time(self.dates, ncopts=ncopts)
+
+            # Add space variables
+            # -------------------
+            atts = {'units': 'meters', 'long_name': 'nodal x-coordinate'}
+            nest_ncfile.add_variable('x', self._grid_ref.x[nodes], ['node'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'meters', 'long_name': 'nodal y-coordinate'}
+            nest_ncfile.add_variable('y', self._grid_ref.y[nodes], ['node'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'degrees_east', 'standard_name': 'longitude', 
+                    'long_name': 'nodal longitude'}
+            nest_ncfile.add_variable('lon', self._grid_ref.lon[nodes], ['node'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'degrees_north', 'standard_name': 'latitude', 
+                    'long_name': 'nodal latitude'}
+            nest_ncfile.add_variable('lat', self._grid_ref.lat[nodes], ['node'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'meters', 'long_name': 'zonal x-coordinate'}
+            nest_ncfile.add_variable('xc', self._grid_ref.xc[elements], ['nele'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'meters', 'long_name': 'zonal y-coordinate'}
+            nest_ncfile.add_variable('yc', self._grid_ref.yc[elements], ['nele'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'degrees_east', 'standard_name': 'longitude', 
+                    'long_name': 'zonal longitude'}
+            nest_ncfile.add_variable('lonc', self._grid_ref.lonc[elements], 
+                    ['nele'], attributes=atts, ncopts=ncopts)
+
+            atts = {'units': 'degrees_north', 'standard_name': 'latitude', 
+                    'long_name': 'zonal latitude'}
+            nest_ncfile.add_variable('latc', self._grid_ref.latc[elements], 
+                    ['nele'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'nodes surrounding element'}
+            nv = self._grid_ref.nv[:, elements] + 1  # FVCOM uses 1-based indexing
+            nest_ncfile.add_variable('nv', nv, 
+                    ['three', 'nele'], format='i4', attributes=atts, 
+                    ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Layers',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglay eta: zeta depth: h'}
+            nest_ncfile.add_variable('siglay', self._grid_ref.sigma_layers[nodes, :].T, 
+                    ['siglay', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Levels',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglev eta: zeta depth: h'}
+            nest_ncfile.add_variable('siglev', self._grid_ref.sigma_levels[nodes, :].T, 
+                    ['siglev', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Layers',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglay_center eta: '
+                    + 'zeta_center depth: h_center'}
+            nest_ncfile.add_variable('siglay_center', self._grid_ref.sigmac_layers[
+                    elements, :].T, ['siglay', 'nele'], attributes=atts, 
+                    ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Levels',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglev_center eta: '
+                    + 'zeta_center depth: h_center'}
+            nest_ncfile.add_variable('siglev_center', self._grid_ref.sigmac_levels[
+                    elements, :].T, ['siglev', 'nele'], attributes=atts, 
+                    ncopts=ncopts)
+
+            atts = {'long_name': 'Bathymetry',
+                    'standard_name': 'sea_floor_depth_below_geoid',
+                    'units': 'm',
+                    'positive': 'down',
+                    'grid': 'Bathymetry_mesh',
+                    'coordinates': 'x y',
+                    'type': 'data'}
+            nest_ncfile.add_variable('h', self._grid_ref.h[nodes], ['node'], 
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Bathymetry',
+                    'standard_name': 'sea_floor_depth_below_geoid',
+                    'units': 'm',
+                    'positive': 'down',
+                    'grid': 'grid1 grid3',
+                    'coordinates': 'latc lonc',
+                    'grid_location': 'center'}
+            nest_ncfile.add_variable('h_center', self._grid_ref.hc[elements], 
+                    ['nele'], attributes=atts, ncopts=ncopts)
+
+            if type == 3:
+                atts = {'long_name': 'Weights for nodes in relaxation zone',
+                        'units': 'no units',
+                        'grid': 'fvcom_grid',
+                        'type': 'data'}
+                nest_ncfile.add_variable('weight_node', node_weights, 
+                        ['time', 'node'], attributes=atts, ncopts=ncopts)
+
+                atts = {'long_name': 'Weights for elements in relaxation zone',
+                        'units': 'no units',
+                        'grid': 'fvcom_grid',
+                        'type': 'data'}
+                nest_ncfile.add_variable('weight_cell', element_weights, 
+                        ['time', 'nele'], attributes=atts, ncopts=ncopts)
+
+            # Now all the data
+            # ----------------
+
+            atts = {'long_name': 'Water Surface Elevation',
+                    'units': 'meters',
+                    'positive': 'up',
+                    'standard_name': 'sea_surface_height_above_geoid',
+                    'grid': 'Bathymetry_Mesh',
+                    'coordinates': 'time lat lon',
+                    'type': 'data',
+                    'location': 'node'}
+            nest_ncfile.add_variable('zeta', self.forcing_data['zeta'], 
+                    ['time', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Vertically Averaged x-velocity',
+                    'units': 'meters  s-1',
+                    'grid': 'fvcom_grid',
+                    'type': 'data'}
+            nest_ncfile.add_variable('ua', self.forcing_data['ua'], 
+                    ['time', 'nele'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Vertically Averaged y-velocity',
+                    'units': 'meters  s-1',
+                    'grid': 'fvcom_grid',
+                    'type': 'data'}
+            nest_ncfile.add_variable('va', self.foricing_data['va'], 
+                    ['time', 'nele'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Eastward Water Velocity',
+                    'units': 'meters  s-1',
+                    'standard_name': 'eastward_sea_water_velocity',
+                    'grid': 'fvcom_grid',
+                    'coordinates': 'time siglay latc lonc',
+                    'type': 'data',
+                    'location': 'face'}
+            nest_ncfile.add_variable('u', self.foricing_data['u'], 
+                    ['time', 'siglay', 'nele'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Northward Water Velocity',
+                    'units': 'meters  s-1',
+                    'standard_name': 'Northward_sea_water_velocity',
+                    'grid': 'fvcom_grid',
+                    'coordinates': 'time siglay latc lonc',
+                    'type': 'data',
+                    'location': 'face'}
+            nest_ncfile.add_variable('v', self.foricing_data['v'], 
+                    ['time', 'siglay', 'nele'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Temperature',
+                    'standard_name': 'sea_water_temperature',
+                    'units': 'degrees Celcius',
+                    'grid': 'fvcom_grid',
+                    'coordinates': 'time siglay lat lon',
+                    'type': 'data',
+                    'location': 'node'}
+            nest_ncfile.add_variable('temp', self.foricing_data['temp'], 
+                    ['time', 'siglay', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Salinity',
+                    'standard_name': 'sea_water_salinity',
+                    'units': '1e-3',
+                    'grid': 'fvcom_grid',
+                    'coordinates': 'time siglay lat lon',
+                    'type': 'data',
+                    'location': 'node'}
+            nest_ncfile.add_variable('salinity', self.foricing_data['salinity'], 
+                    ['time', 'siglay', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'hydro static vertical velocity',
+                    'units': 'meters s-1',
+                    'grid': 'fvcom_grid',
+                    'type': 'data',
+                    'coordinates': 'time siglev lat lon'}
+            nest_ncfile.add_variable('hyw', hyw, 
+                    ['time', 'siglev', 'node'], attributes=atts, ncopts=ncopts)
