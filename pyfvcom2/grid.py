@@ -3,8 +3,9 @@ from typing import Optional
 
 from .mesh_reader import MeshData
 from .sigma_reader import SigmaData
-from .coordinates import lonlat_from_utm, utm_from_lonlat
+from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
+from .interpolation import InterpolationCoordinates
 
 
 class OpenBoundary:
@@ -163,7 +164,7 @@ class Grid:
             )
             self.open_boundaries.append(open_boundary)
 
-    # Add roperty decorators for retrieving class attributes
+    # Add property decorators for retrieving class attributes
     @property
     def n_nodes(self):
         """Get the number of nodes in the mesh."""
@@ -193,6 +194,48 @@ class Grid:
     def bathy_elements(self):
         """Get the bathymetry values at element centroids."""
         return self.hc
+
+    @property
+    def n_open_boundaries(self):
+        """Get the number of open boundaries."""
+        return len(self.open_boundaries)
+
+    def get_interpolation_coordinates(self, grid_position: str, dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
+        """Get interpolation coordinates for a specific grid position.
+
+        Args:
+            grid_position: The grid position ('node' or 'element') for which to retrieve
+                interpolation coordinates.
+            dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
+
+        Returns:
+            InterpolationCoordinates: The interpolation coordinates for the specified grid position.
+        """
+        if grid_position not in ['node', 'element']:
+            raise ValueError("grid_position must be either 'node' or 'element'")
+
+        if grid_position == 'node':
+            lons = self.lon
+            lats = self.lat
+            sigma_layers = self.sigma_layers
+            bathy = self.h
+        else:  # grid_position == 'element'
+            lons = self.lonc
+            lats = self.latc
+            sigma_layers = self.sigmac_layers
+            bathy = self.hc
+
+        # Set zeta to zero for depth calculation (no free surface displacement)
+        zeta = np.zeros_like(bathy)
+
+        # Compute depths from sigma coordinates
+        depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
+
+        # Use provided dates or empty array
+        if dates is None:
+            dates = np.array([])
+
+        return InterpolationCoordinates(dates, depths, lats, lons)
 
 
 def connectivity(p, t):
