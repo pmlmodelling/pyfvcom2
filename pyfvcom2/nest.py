@@ -1,18 +1,17 @@
 import os
 import numpy as np
 from datetime import datetime
-from typing import Optional
 
 from pyfvcom2.fvcom_writer import FVCOMWriter
 
 from .version import full_version
-from .interpolation import InterpolationCoordinates, Interpolator
+from .interpolation_coordinates import InterpolationCoordinates
+from .interpolation import Interpolator
 from .weights_calculator import get_weights_calculator
 from .grid import Grid, OpenBoundary
 from .grid import find_connected_elements
 from .coordinates import sigma_to_z_coords
 from .ocean import zbar
-from .exceptions import PyFVCOM2ValueError
 
 
 class GridBand:

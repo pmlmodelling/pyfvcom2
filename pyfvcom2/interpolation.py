@@ -1,62 +1,16 @@
 """Interpolation functions"""
 
-import datetime
 import numpy as np
 from abc import ABC, abstractmethod
 from scipy import interpolate
 from typing import NamedTuple, Optional
 
-from .grid import InterpolationCoordinates
 from .cmems_reader import CMEMSReader, default_fvcom_to_cmems_var_names
 from .fvcom_reader import FVCOMReader
 from .exceptions import PyFVCOM2ValueError
+from .interpolation_coordinates import InterpolationCoordinates
 
 __all__ = ["InterpolationCoordinates", "Interpolator", "CMEMSInterpolator", "FVCOMInterpolator"]
-
-
-class InterpolationCoordinates:
-    def __init__(self, dates: np.ndarray, depths: np.ndarray, lats: np.ndarray, lons: np.ndarray):
-        """Initialize the InterpolationCoordinates with date, depth, latitude, and longitude arrays.
-
-        Args:
-            dates (np.ndarray): 1D array of datetime objects.
-            depths (np.ndarray): 1D array of depth values.
-            lats (np.ndarray): 1D array of latitude values.
-            lons (np.ndarray): 1D array of longitude values.
-        """
-        self._dates = dates
-        self._depths = depths
-        self._lats = lats
-        self._lons = lons
-    
-    # Add getters and setters for each attribute if needed
-    @property
-    def dates(self):
-        return self._dates
-    @dates.setter
-    def dates(self, value):
-        self._dates = value
-
-    @property
-    def depths(self):
-        return self._depths
-    @depths.setter
-    def depths(self, value):
-        self._depths = value
-
-    @property
-    def lats(self):
-        return self._lats
-    @lats.setter
-    def lats(self, value):
-        self._lats = value
-
-    @property
-    def lons(self): 
-        return self._lons
-    @lons.setter
-    def lons(self, value):
-        self._lons = value
 
 
 class Interpolator(ABC):
@@ -139,10 +93,13 @@ class CMEMSInterpolator(Interpolator):
         """
         # Determine time indices from the coordinates, which provides either a single
         # date/time as a datetime object or a list of datetime objects
-        if isinstance(coordinates.dates, datetime):
-            dates = [coordinates.dates]
-        else:
+        try:
+            # Try to get length - if it fails, it's a single datetime object
+            len(coordinates.dates)
             dates = coordinates.dates
+        except TypeError:
+            # Single datetime object, wrap in list
+            dates = [coordinates.dates]
 
         # Determine the number of dates and points
         n_dates = len(dates)
@@ -188,10 +145,13 @@ class CMEMSInterpolator(Interpolator):
         """
         # Determine time indices from the coordinates, which provides either a single
         # date/time as a datetime object or a list of datetime objects
-        if isinstance(coordinates.dates, datetime):
-            dates = [coordinates.dates]
-        else:
+        try:
+            # Try to get length - if it fails, it's a single datetime object
+            len(coordinates.dates)
             dates = coordinates.dates
+        except TypeError:
+            # Single datetime object, wrap in list
+            dates = [coordinates.dates]
 
         # Determine the number of dates and points
         n_dates = len(dates)

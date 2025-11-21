@@ -5,7 +5,8 @@ __all__ = ["FVCOMReader"]
 import numpy as np
 from netCDF4 import Dataset
 
-from .interpolation import InterpolationCoordinates
+from .interpolation_coordinates import InterpolationCoordinates
+from .coordinates import sigma_to_z_coords
 from .grid import Grid
 from .mesh_reader import MeshData
 from .sigma_reader import SigmaData
@@ -145,7 +146,7 @@ class FVCOMReader:
             MeshData: Mesh data object compatible with Grid construction.
         """
         # Extract basic mesh components
-        nodes = np.arange(self.n_nodes)
+        nodes = np.arange(1, self.dataset.dimensions['node'].size+1) # TBC zero based indexing kept here.
         triangles = self.dataset.variables['nv'][:].T - 1  # Convert to 0-based indexing, transpose to (n_elem, 3)
         x1 = self.dataset.variables['lon'][:]
         x2 = self.dataset.variables['lat'][:]

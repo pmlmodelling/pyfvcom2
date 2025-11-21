@@ -5,7 +5,7 @@ from .mesh_reader import MeshData
 from .sigma_reader import SigmaData
 from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
-from .interpolation import InterpolationCoordinates
+from .interpolation_coordinates import InterpolationCoordinates
 
 
 class OpenBoundary:
@@ -76,7 +76,7 @@ class Grid:
 
     Attributes:
         nodes (np.ndarray): N array of node coordinates.
-        triangles (np.ndarray): Mx3 array of triangle vertex indices.
+        triangles (np.ndarray): (n_elem, 3) array of triangle vertex indices.
         x (np.ndarray): x coordinates of nodes.
         y (np.ndarray): y coordinates of nodes.
         h (np.ndarray): bathymetry at nodes.
@@ -98,18 +98,18 @@ class Grid:
         epsg_code: Optional[str] = None,
     ):
         self.nodes = mesh_data.nodes
-        self.triangles = mesh_data.triangles
+        self.triangles = mesh_data.triangle
         self.types_bdy = mesh_data.types_bdy
         self.nodes_bdy = mesh_data.nodes_bdy
 
         if coordinate_system == "cartesian":
             self.x = mesh_data.x1
             self.y = mesh_data.x2
-            self.lon, self.lat = lonlat_from_utm(self.x, self.y, epsg_code)
+            self.lon, self.lat, self.epsg_code = lonlat_from_utm(self.x, self.y, epsg_code)
         elif coordinate_system == "geographic":
             self.lon = mesh_data.x1
             self.lat = mesh_data.x2
-            self.x, self.y = utm_from_lonlat(self.lon, self.lat, epsg_code)
+            self.x, self.y, self.epsg_code = utm_from_lonlat(self.lon, self.lat, epsg_code)
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'cartesian' or 'geographic'"
@@ -118,7 +118,7 @@ class Grid:
         # Element centre coordinates
         self.xc = nodes2elems(self.x, self.triangles)
         self.yc = nodes2elems(self.y, self.triangles)
-        self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, epsg_code)
+        self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, self.epsg_code)
 
         # Bathymetry at nodes and elements
         self.h = mesh_data.x3
@@ -147,22 +147,23 @@ class Grid:
         # Open boundaries
         # ---------------
         self.open_boundaries = []
-        for bdy_id, bdy_nodes in enumerate(mesh_data.nodes_bdy):
-            # Convert to numpy array if it isn't already
-            bdy_node_indices = np.asarray(bdy_nodes)
-            
-            # Extract sigma levels and layers for boundary nodes
-            bdy_sigma_levels = self.sigma_levels[bdy_node_indices, :]
-            bdy_sigma_layers = self.sigma_layers[bdy_node_indices, :]
-            
-            # Create OpenBoundary object
-            open_boundary = OpenBoundary(
-                bdy_id=bdy_id,
-                node_indices=bdy_node_indices,
-                sigma_levels=bdy_sigma_levels,
-                sigma_layers=bdy_sigma_layers
-            )
-            self.open_boundaries.append(open_boundary)
+        if mesh_data.nodes_bdy is not None:
+            for bdy_id, bdy_nodes in enumerate(mesh_data.nodes_bdy):
+                # Convert to numpy array if it isn't already
+                bdy_node_indices = np.asarray(bdy_nodes)
+                
+                # Extract sigma levels and layers for boundary nodes
+                bdy_sigma_levels = self.sigma_levels[bdy_node_indices, :]
+                bdy_sigma_layers = self.sigma_layers[bdy_node_indices, :]
+                
+                # Create OpenBoundary object
+                open_boundary = OpenBoundary(
+                    bdy_id=bdy_id,
+                    node_indices=bdy_node_indices,
+                    sigma_levels=bdy_sigma_levels,
+                    sigma_layers=bdy_sigma_layers
+                )
+                self.open_boundaries.append(open_boundary)
 
     # Add property decorators for retrieving class attributes
     @property
@@ -217,12 +218,12 @@ class Grid:
         if grid_position == 'node':
             lons = self.lon
             lats = self.lat
-            sigma_layers = self.sigma_layers
+            sigma_layers = self.sigma_layers.T
             bathy = self.h
         else:  # grid_position == 'element'
             lons = self.lonc
             lats = self.latc
-            sigma_layers = self.sigmac_layers
+            sigma_layers = self.sigmac_layers.T
             bathy = self.hc
 
         # Set zeta to zero for depth calculation (no free surface displacement)

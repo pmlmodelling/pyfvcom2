@@ -2,6 +2,7 @@
 
 __all__ = ["CMEMSReader", "CMEMSVariableMap"]
 
+from datetime import datetime
 import numpy as np
 import xarray as xr
 from scipy import interpolate
@@ -16,7 +17,7 @@ CMEMSVariableMap = namedtuple("CMEMSVariableMap", "cmems_name fvcom_name grid_po
 
 # Default mapping of FVCOM variable names to CMEMS variable names
 default_fvcom_to_cmems_var_names = {'temp': 'thetao',
-                                    'salt': 'so',
+                                    'salinity': 'so',
                                     'u': 'uo',
                                     'v': 'vo',
                                     'zeta': 'zos'}
@@ -188,7 +189,7 @@ class CMEMSReader:
 
         return -self.dataset.variables[f"{self.depth_dim_name}"][:].values
 
-    def contains_date(self, date_time) -> bool:
+    def contains_date(self, date_time: datetime) -> bool:
         """Check if the dataset contains the given date_time.
 
         Args:
@@ -196,6 +197,10 @@ class CMEMSReader:
         Returns:
             bool: True if date_time is within the dataset time range, False otherwise.
         """
+        # If date_time is a of type dateime.dateime, convert to np.datetime64
+        if isinstance(date_time, datetime):
+            date_time = np.datetime64(date_time)
+
         dates = self.dates
         if len(dates) == 0:
             return False
@@ -205,7 +210,7 @@ class CMEMSReader:
 
         return start_date <= date_time <= end_date
 
-    def closest_date_index(self, date_time) -> int:
+    def get_closest_date_index(self, date_time) -> int:
         """Get the index of the datetime variable closest to the given date_time.
 
         Args:
@@ -213,7 +218,10 @@ class CMEMSReader:
         Returns:
             int: Index of the closest time variable.
         """
-        time_diffs = [abs((dt - date_time).total_seconds()) for dt in self.dates]
+        if isinstance(date_time, datetime):
+            date_time = np.datetime64(date_time)
+
+        time_diffs = [abs(dt - date_time) for dt in self.dates]
         closest_date_index = time_diffs.index(min(time_diffs))
         return closest_date_index
 

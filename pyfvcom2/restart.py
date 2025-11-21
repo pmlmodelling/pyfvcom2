@@ -71,9 +71,10 @@ def write_restart(
             new_times = new_datetime.strftime(
                 f'{new_datetime.strftime("%Y-%m-%d")}T00:00:00.000000'
             )
+            times_vars = {"time": new_time, "Itime": new_Itime, "Times": new_times}
 
             # Create the three time variables if they do not already exist
-            for time_var_name in ["time", "Itime", "Times"]:
+            for time_var_name, value in times_vars.items():
                 template_var = template_ds.variables[time_var_name]
                 output_ds.createVariable(
                     time_var_name,
@@ -91,8 +92,9 @@ def write_restart(
 
                 # Update the time variables in the output dataset
                 output_ds.variables[time_var_name][:] = np.asarray(
-                    new_time, dtype=template_ds.variables[time_var_name].datatype
+                    value, dtype=template_ds.variables[time_var_name].datatype
                 )
+
 
         # Now write the data variables
         for var_name, var_data in data.items():
