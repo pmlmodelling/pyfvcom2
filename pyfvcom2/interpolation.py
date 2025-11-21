@@ -15,7 +15,7 @@ __all__ = ["InterpolationCoordinates", "Interpolator", "CMEMSInterpolator", "FVC
 
 
 class InterpolationCoordinates:
-    def __init__(self, dates, depths, lats, lons):
+    def __init__(self, dates: np.ndarray, depths: np.ndarray, lats: np.ndarray, lons: np.ndarray):
         """Initialize the InterpolationCoordinates with date, depth, latitude, and longitude arrays.
 
         Args:
