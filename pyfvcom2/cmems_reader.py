@@ -6,7 +6,7 @@ from datetime import datetime
 import numpy as np
 import xarray as xr
 from scipy import interpolate
-from typing import Optional
+from typing import Optional, Union, List
 from collections import namedtuple
 from pyfvcom2.exceptions import PyFVCOM2ValueError
 
@@ -24,14 +24,27 @@ class CMEMSReader:
 
     def __init__(
         self,
-        file_path: str,
+        file_path: Union[str, List[str]],
         reference_var_name: str,
         dimension_var_names: Optional[dict] = None,
     ):
-        self.file_path = file_path
+        # Handle both single file and list of files
+        if isinstance(file_path, str):
+            self.file_paths = [file_path]
+        else:
+            self.file_paths = file_path
 
-        print("Opening CMEMS file:", self.file_path)
-        self.dataset = xr.open_dataset(self.file_path)
+        print(f"Opening CMEMS file(s): {self.file_paths}")
+        
+        # Open and concatenate datasets if multiple files
+        if len(self.file_paths) == 1:
+            self.dataset = xr.open_dataset(self.file_paths[0])
+        else:
+            datasets = [xr.open_dataset(fp) for fp in self.file_paths]
+            # Concatenate along time dimension
+            self.dataset = xr.concat(datasets, dim='time')
+            # Sort by time to ensure proper ordering
+            self.dataset = self.dataset.sortby('time')
 
         # Set dimension variable names
         self.time_dim_name = (
@@ -60,7 +73,7 @@ class CMEMSReader:
                 and dim_name not in self.dataset.variables
             ):
                 raise PyFVCOM2ValueError(
-                    f"Dimension variable name {dim_name} not found in CMEMS file {self.file_path}"
+                    f"Dimension variable name {dim_name} not found in CMEMS file(s) {self.file_paths}"
                 )
 
         # If reading 3D variables, check depth dimension exists
@@ -70,7 +83,7 @@ class CMEMSReader:
             and self.depth_dim_name not in self.dataset.variables
         ):
             print(
-                f"Depth dimension variable name {self.depth_dim_name} not found in CMEMS file {self.file_path}."
+                f"Depth dimension variable name {self.depth_dim_name} not found in CMEMS file(s) {self.file_paths}."
             )
             print(f"Assuming the dataset includes 2D variables only.")
             self.has_depth_dimension = False
@@ -88,7 +101,7 @@ class CMEMSReader:
 
         if self.reference_var_name not in self.dataset.variables:
             raise PyFVCOM2ValueError(
-                f"Reference variabe {self.reference_var_name} not found in dataset {file_path}."
+                f"Reference variable {self.reference_var_name} not found in dataset(s) {self.file_paths}."
             )
 
         # Check reference var dimensions
@@ -142,6 +155,19 @@ class CMEMSReader:
 
         self._unmasked_lons = self._lon_grid[~self.mask_2D]
         self._unmasked_lats = self._lat_grid[~self.mask_2D]
+
+    @property
+    def n_files(self):
+        """Get the number of files being used."""
+        return len(self.file_paths)
+        
+    @property
+    def time_span(self):
+        """Get the time span covered by the dataset."""
+        dates = self.dates
+        if len(dates) == 0:
+            return None
+        return {'start': dates[0], 'end': dates[-1], 'count': len(dates)}
 
     @property
     def n_depths(self):
@@ -232,7 +258,7 @@ class CMEMSReader:
         """
         if var_name not in self.dataset.variables:
             raise PyFVCOM2ValueError(
-                f"The supplied variable {var_name} is not in the dataset {self.file_path}"
+                f"The supplied variable {var_name} is not in the dataset(s) {self.file_paths}"
             )
 
         var = self.dataset[var_name]
