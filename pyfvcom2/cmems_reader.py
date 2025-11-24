@@ -1,6 +1,6 @@
 """Read CMEMS data"""
 
-__all__ = ["CMEMSReader", "CMEMSVariableMap"]
+__all__ = ["CMEMSReader", "default_fvcom_to_cmems_var_names"]
 
 from datetime import datetime
 import numpy as np
@@ -9,10 +9,6 @@ from scipy import interpolate
 from typing import Optional
 from collections import namedtuple
 from pyfvcom2.exceptions import PyFVCOM2ValueError
-
-
-# Named tuple for mapping cmems variable names to fvcom variable names and the fvcom grid position
-CMEMSVariableMap = namedtuple("CMEMSVariableMap", "cmems_name fvcom_name grid_position")
 
 
 # Default mapping of FVCOM variable names to CMEMS variable names
