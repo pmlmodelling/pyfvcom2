@@ -24,12 +24,12 @@ class MeshData(NamedTuple):
     
     Attrs:
         triangles: Array of triangle vertex indices.
-        nodes: Integer identifier for each node.
+        nodes: Integer identifier for each node (one indexed).
         x1: Array of node x1-coordinates (x or longitude).
         x2: Array of node x2-coordinates (y or latitude).
         x3: Array of node x3-coordinates (if available).
         types_bdy: Array of boundary types for nodes (if available).
-        nodes_bdy: List of lists of open boundary node indices (if available).
+        nodes_bdy: List of lists of open boundary node indices (if available, zero-indexed).
     """
     triangle: np.ndarray
     nodes: Optional[np.ndarray]
