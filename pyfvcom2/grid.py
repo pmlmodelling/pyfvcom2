@@ -1,8 +1,8 @@
 import numpy as np
 from typing import Optional
 
-from .mesh_reader import MeshData
-from .sigma_reader import SigmaData
+from .mesh_reader import MeshData, read_mesh_file
+from .sigma_reader import SigmaConfig, process_sigma_config, read_sigma_file
 from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
 from .interpolation_coordinates import InterpolationCoordinates
@@ -93,19 +93,22 @@ class Grid:
     def __init__(
         self,
         mesh_data: MeshData,
-        sigma_data: SigmaData,
+        sigma_config: SigmaConfig,
         coordinate_system: str,
         epsg_code: Optional[str] = None,
     ):
-        self.nodes = mesh_data.nodes
         self.triangles = mesh_data.triangle
         self.types_bdy = mesh_data.types_bdy
         self.nodes_bdy = mesh_data.nodes_bdy
 
+        self._n_nodes = mesh_data.nodes.shape[0]
+        self._n_elements = mesh_data.triangle.shape[0]
+
         if coordinate_system == "cartesian":
             self.x = mesh_data.x1
             self.y = mesh_data.x2
-            self.lon, self.lat, self.epsg_code = lonlat_from_utm(self.x, self.y, epsg_code)
+            self.epsg_code = epsg_code
+            self.lon, self.lat = lonlat_from_utm(self.x, self.y, epsg_code)
         elif coordinate_system == "geographic":
             self.lon = mesh_data.x1
             self.lat = mesh_data.x2
@@ -126,23 +129,7 @@ class Grid:
 
         # Vertical grid
         # -------------
-        self.sigma_config = sigma_data.sigma_config
-        self.sigma_levels = sigma_data.sigma_levels
-
-        # Create a sigma layer variable (i.e. midpoint in the sigma levels).
-        self.sigma_layers = self.sigma_levels[:, 0:-1] + (
-            np.diff(self.sigma_levels, axis=1) / 2
-        )
-
-        # Create a sigma layer variable (i.e. midpoint in the sigma levels).
-        self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
-        self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
-
-        # Depth levels in z coordinates
-        self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
-        self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
-        self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
-        self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
+        self._add_sigma_coordinates(sigma_config)
 
         # Open boundaries
         # ---------------
@@ -155,7 +142,7 @@ class Grid:
                 # Extract sigma levels and layers for boundary nodes
                 bdy_sigma_levels = self.sigma_levels[bdy_node_indices, :]
                 bdy_sigma_layers = self.sigma_layers[bdy_node_indices, :]
-                
+ 
                 # Create OpenBoundary object
                 open_boundary = OpenBoundary(
                     bdy_id=bdy_id,
@@ -169,22 +156,52 @@ class Grid:
     @property
     def n_nodes(self):
         """Get the number of nodes in the mesh."""
-        return self.nodes.shape[0]
+        return self._n_nodes
 
     @property
     def n_elements(self):
         """Get the number of elements in the mesh."""
-        return self.triangles.shape[0]
+        return self._n_elements
 
     @property
     def n_sigma_levels(self):
         """Get the number of sigma levels in the vertical grid."""
-        return self.sigma_levels.shape[1]
+        return self._n_sigma_levels
 
     @property
     def n_sigma_layers(self):
         """Get the number of sigma layers in the vertical grid."""
-        return self.sigma_layers.shape[1]
+        return self._n_sigma_layers
+
+    @property
+    def lon_nodes(self):
+        """Get the longitude values at nodes."""
+        return self.lon
+
+    @property
+    def lat_nodes(self):
+        """Get the latitude values at nodes."""
+        return self.lat
+
+    @property
+    def lon_elements(self):
+        """Get the longitude values of element centroids."""
+        return self.lonc
+
+    @property
+    def lat_elements(self):
+        """Get the latitude values of element centroids."""
+        return self.latc
+
+    @property
+    def sigma_layers_nodes(self):
+        """Get the sigma layer values at nodes."""
+        return self.sigma_layers
+
+    @property
+    def sigma_layers_elements(self):
+        """Get the sigma layer values at element centroids."""
+        return self.sigmac_layers
 
     @property
     def bathy_nodes(self):
@@ -200,6 +217,35 @@ class Grid:
     def n_open_boundaries(self):
         """Get the number of open boundaries."""
         return len(self.open_boundaries)
+
+    def _add_sigma_coordinates(self, sigma_config: SigmaConfig):
+        """ Add sigma coordinates from a sigma configuration.
+        
+        Args:
+            sigma_config: Sigma configuration parameters.
+        """
+        sigma_data = process_sigma_config(sigma_config, self.h)
+
+        self.sigma_config = sigma_data.sigma_config
+        self.sigma_levels = sigma_data.sigma_levels
+
+        # Create a sigma layer variable (i.e. midpoint in the sigma levels).
+        self.sigma_layers = self.sigma_levels[:, 0:-1] + (
+            np.diff(self.sigma_levels, axis=1) / 2
+        )
+
+        self._n_sigma_levels = self.sigma_levels.shape[1]
+        self._n_sigma_layers = self.sigma_layers.shape[1]
+
+        # Create a sigma layer variable (i.e. midpoint in the sigma levels).
+        self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
+        self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
+
+        # Depth levels in z coordinates
+        self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
+        self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
+        self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
+        self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
 
     def get_interpolation_coordinates(self, grid_position: str, dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
@@ -238,6 +284,24 @@ class Grid:
 
         return InterpolationCoordinates(dates, depths, lats, lons)
 
+
+def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_system: str,
+                epsg_code: Optional[str] = None, **kwargs) -> Grid:
+    """Create a Grid object from mesh and sigma files.
+
+    Args:
+        grid_file: Path to the mesh file.
+        mesh_type: Type of the mesh file (e.g., 'fvcom', 'gmsh').
+        sigma_file: Path to the sigma file.
+        coordinate_system: Coordinate system of the mesh ('cartesian' or 'geographic').
+        epsg_code: EPSG code for coordinate transformations (optional).
+        **kwargs: Additional keyword arguments for mesh reading functions.
+    Returns:
+        Grid: The created Grid object.
+    """
+    mesh_data = read_mesh_file(grid_file, mesh_type=mesh_type, **kwargs)
+    sigma_config = read_sigma_file(sigma_file)
+    return Grid(mesh_data, sigma_config, coordinate_system, epsg_code)
 
 def connectivity(p, t):
     """
