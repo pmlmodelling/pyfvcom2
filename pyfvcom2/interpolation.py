@@ -69,7 +69,7 @@ class CMEMSInterpolator(Interpolator):
         """
         cmems_var_name = self.fvcom_to_cmems_var_names.get(fvcom_var_name)
 
-        print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid...")
+        print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid.")
 
         # Calculate the number of dimensions of the CMEMS variable
         var_ndims = self.cmems_reader.get_var_ndims(cmems_var_name)
@@ -110,18 +110,11 @@ class CMEMSInterpolator(Interpolator):
 
         # Loop over each time index to perform interpolation
         for d_idx, target_date in enumerate(dates):
-            # Confirm the date is within the CMEMS data range
-            if not self.cmems_reader.contains_date(target_date):
-                raise PyFVCOM2ValueError(
-                    f"Target date {target_date} is outside the range of CMEMS data dates."
-                )
-
-            # Determine the time index closest to target_date
-            closest_date_index = self.cmems_reader.get_closest_date_index(target_date)
+            print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
 
             # Get CMEMS unmasked lons/lats
             unmasked_data = self.cmems_reader.get_unmasked_variable(
-                cmems_var_name, closest_date_index
+                cmems_var_name, target_date
             )
 
             interpolated_data[d_idx, :] = interpolate.griddata(
@@ -162,17 +155,10 @@ class CMEMSInterpolator(Interpolator):
         interpolated_data = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
 
         for d_idx, target_date in enumerate(dates):
-            # Confirm the date is within the CMEMS data range
-            if not self.cmems_reader.contains_date(target_date):
-                raise PyFVCOM2ValueError(
-                    f"Target date {target_date} is outside the range of CMEMS data dates."
-                )
-
-            # Determine the time index closest to target_date
-            closest_date_index = self.cmems_reader.get_closest_date_index(target_date)
-
+            print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
+            
             # Get the filled 3D CMEMS variable data
-            var_filled = self.cmems_reader.get_filled_3D_var(cmems_var_name, closest_date_index)
+            var_filled = self.cmems_reader.get_filled_3D_var(cmems_var_name, target_date)
 
             # First, interpolate onto the horizontal grid for each depth level
             var_on_fvcom_horizontal_grid = np.empty(
