@@ -1,6 +1,7 @@
 """Custom exceptions for PyFVCOM2."""
 
 __all__ = [
+    "PyFVCOM2Exception",
     "PyFVCOM2RuntimeError",
     "PyFVCOM2AttributeError",
     "PyFVCOM2ValueError",

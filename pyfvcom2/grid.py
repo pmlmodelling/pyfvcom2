@@ -7,6 +7,8 @@ from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
 from .interpolation_coordinates import InterpolationCoordinates
 
+__all__ = ["OpenBoundary", "Grid", "connectivity", "nodes2elems", "find_connected_elements"]
+
 
 class OpenBoundary:
     """Represents an open boundary in the mesh.

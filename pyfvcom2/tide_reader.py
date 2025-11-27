@@ -4,6 +4,12 @@ from typing import NamedTuple, Optional, List
 from abc import ABC, abstractmethod
 from .exceptions import PyFVCOM2ValueError
 
+__all__ = [
+    "FVCOMHarmonicsNames", "TPXOHarmonicsNames", "TPXOComplexHarmonicsNames", 
+    "HarmonicsData", "HarmonicsReader", "FVCOMHarmonicsReader", 
+    "TPXOHarmonicsReader", "TPXOComplexHarmonicsReader"
+]
+
 # Named tuples to hold variable names for different harmonics data formats
 FVCOMHarmonicsNames = NamedTuple(
     "FVCOMHarmonicsNames",

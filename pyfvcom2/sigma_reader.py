@@ -7,6 +7,7 @@ from pyfvcom2.exceptions import PyFVCOM2ValueError
 
 __all__ = [
     "SigmaConfig",
+    "SigmaData",
     "read_sigma_file",
     "process_sigma_config", 
     "write_sigma_file",

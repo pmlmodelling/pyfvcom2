@@ -13,6 +13,8 @@ from .grid import find_connected_elements
 from .coordinates import sigma_to_z_coords
 from .ocean import zbar
 
+__all__ = ["GridBand", "Nest", "NestManager"]
+
 
 class GridBand:
     """Grid band with adjoining nodes and elements and vertical sigma structure.
