@@ -8,7 +8,7 @@ from pyfvcom2.exceptions import PyFVCOM2ValueError
 __all__ = [
     "SigmaConfig",
     "read_sigma_file",
-    "process_sigma_file", 
+    "process_sigma_config", 
     "write_sigma_file",
     "sigma_generalized",
     "sigma_geometric", 
@@ -135,21 +135,18 @@ def read_sigma_file(filepath: str) -> SigmaConfig:
     )
 
 
-def process_sigma_file(filepath: str, h: np.ndarray, hc: np.ndarray) -> SigmaData:
+def process_sigma_config(config: SigmaConfig, h: np.ndarray) -> SigmaData:
     """Read in a sigma coordinates file and generate sigma coordinate parameters.
 
     Args:
-        filepath: Path to FVCOM sigma coordinates .dat file.
+        config: Sigma configuration parameters.
         h: Bathymetry at nodes.
-        hc: Bathymetry at element centroids.
 
     Returns:
         SigmaData: A named tuple containing:
             - sigma_config (SigmaConfig): Sigma configuration as read from file.
             - sigma_levels (np.ndarray): Sigma levels at each node.
     """
-    config = read_sigma_file(filepath)
-
     # Derive n_nodes and n_elems from h and hc
     n_nodes = h.shape[0]
 
