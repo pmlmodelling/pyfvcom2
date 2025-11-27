@@ -34,18 +34,15 @@ class CMEMSReader:
         else:
             self.file_paths = file_path
 
-        print(f"Opening CMEMS file(s): {self.file_paths}")
+        # Cache for currently loaded dataset and its file path
+        self._current_dataset = None
+        self._current_file_path = None
+        self._last_used_file_path = None  # For optimization
         
-        # Open and concatenate datasets if multiple files
-        if len(self.file_paths) == 1:
-            self.dataset = xr.open_dataset(self.file_paths[0])
-        else:
-            datasets = [xr.open_dataset(fp) for fp in self.file_paths]
-            # Concatenate along time dimension
-            self.dataset = xr.concat(datasets, dim='time')
-            # Sort by time to ensure proper ordering
-            self.dataset = self.dataset.sortby('time')
-
+        # Load only the first file initially for metadata and time-independent data
+        print(f'Accessing CMEMS metadata from: {self.file_paths[0]}')
+        self._metadata_dataset = xr.open_dataset(self.file_paths[0])
+        
         # Set dimension variable names
         self.time_dim_name = (
             dimension_var_names.get("time", "time") if dimension_var_names else "time"
@@ -69,21 +66,21 @@ class CMEMSReader:
         # Confirm dimension variable names exist in dataset. Assumes dimension and variable have same name.
         for dim_name in [self.time_dim_name, self.lon_dim_name, self.lat_dim_name]:
             if (
-                dim_name not in self.dataset.dims
-                and dim_name not in self.dataset.variables
+                dim_name not in self._metadata_dataset.dims
+                and dim_name not in self._metadata_dataset.variables
             ):
                 raise PyFVCOM2ValueError(
-                    f"Dimension variable name {dim_name} not found in CMEMS file(s) {self.file_paths}"
+                    f"Dimension variable name {dim_name} not found in CMEMS file {self.file_paths[0]}"
                 )
 
         # If reading 3D variables, check depth dimension exists
         self.has_depth_dimension = True
         if (
-            self.depth_dim_name not in self.dataset.dims
-            and self.depth_dim_name not in self.dataset.variables
+            self.depth_dim_name not in self._metadata_dataset.dims
+            and self.depth_dim_name not in self._metadata_dataset.variables
         ):
             print(
-                f"Depth dimension variable name {self.depth_dim_name} not found in CMEMS file(s) {self.file_paths}."
+                f"Depth dimension variable name {self.depth_dim_name} not found in CMEMS file {self.file_paths[0]}."
             )
             print(f"Assuming the dataset includes 2D variables only.")
             self.has_depth_dimension = False
@@ -99,23 +96,26 @@ class CMEMSReader:
         self.reference_var_name = reference_var_name
         print(f"Using reference variable {self.reference_var_name}.")
 
-        if self.reference_var_name not in self.dataset.variables:
+        if self.reference_var_name not in self._metadata_dataset.variables:
             raise PyFVCOM2ValueError(
-                f"Reference variable {self.reference_var_name} not found in dataset(s) {self.file_paths}."
+                f"Reference variable {self.reference_var_name} not found in dataset(s) {self.file_paths[0]}."
             )
 
         # Check reference var dimensions
         if self.has_depth_dimension:
             if (
                 self.depth_dim_name
-                not in self.dataset.variables[self.reference_var_name].dims
+                not in self._metadata_dataset.variables[self.reference_var_name].dims
             ):
                 raise PyFVCOM2ValueError(
                     f"Please provide a 3D reference variable so the depth mask can be inferred. "
                     f"The supplied reference variable {self.reference_var_name} does not have a depth axis."
                 )
 
-        # Set masks
+        # Build time index mapping from all files
+        self._build_time_index_mapping()
+
+        # Set masks using metadata dataset
         self._set_masks()
 
         # Determine unmasked lon/lat points
@@ -123,11 +123,86 @@ class CMEMSReader:
 
         # Store variable for bottom indices. Only compute this if it is needed.
         self._bottom_indices = None
+        
+    def _build_time_index_mapping(self):
+        """Build a mapping from datetime to (file_path, local_time_index)"""
+        self._time_to_file_map = {}
+        self._all_dates = []
+        
+        for file_path in self.file_paths:
+            with xr.open_dataset(file_path) as ds:
+                times = ds[self.time_dim_name].data
+                for local_idx, time_val in enumerate(times):
+                    self._time_to_file_map[time_val] = (file_path, local_idx)
+                    self._all_dates.append(time_val)
+        
+        # Sort dates for efficient searching
+        self._all_dates.sort()
+        
+    def _load_dataset_for_datetime(self, target_datetime, tolerance=None):
+        """Load the appropriate dataset for a given datetime
+        
+        Args:
+            target_datetime: The target datetime to find data for
+            tolerance: Maximum allowed time difference (as timedelta). If None, uses default bounds checking.
+        """
+        # Convert datetime to numpy datetime64 if needed
+        if isinstance(target_datetime, datetime):
+            target_datetime = np.datetime64(target_datetime)
+            
+        # Check bounds first
+        if len(self._all_dates) == 0:
+            raise PyFVCOM2ValueError("No dates available in the dataset(s)")
+            
+        start_date = self._all_dates[0]
+        end_date = self._all_dates[-1]
+        
+        # Check if target is exactly in our time mapping
+        if target_datetime in self._time_to_file_map:
+            required_file_path, local_time_index = self._time_to_file_map[target_datetime]
+        else:
+            # Check if target is within reasonable bounds
+            if target_datetime < start_date or target_datetime > end_date:
+                raise PyFVCOM2ValueError(
+                    f"Target datetime {target_datetime} is outside the available data range "
+                    f"[{start_date} to {end_date}]"
+                )
+            
+            # Find closest time within the valid range
+            time_diffs = [abs(dt - target_datetime) for dt in self._all_dates]
+            closest_idx = time_diffs.index(min(time_diffs))
+            closest_time = self._all_dates[closest_idx]
+            
+            # Optional tolerance check
+            if tolerance is not None:
+                min_diff = min(time_diffs)
+                if min_diff > np.timedelta64(tolerance):
+                    raise PyFVCOM2ValueError(
+                        f"Closest available time ({closest_time}) is {min_diff} away from target "
+                        f"({target_datetime}), which exceeds tolerance ({tolerance})"
+                    )
+            
+            required_file_path, local_time_index = self._time_to_file_map[closest_time]
+            
+        # Optimize: try last used file first
+        if (self._last_used_file_path == required_file_path and 
+            self._current_dataset is not None):
+            return self._current_dataset, local_time_index
+            
+        # Load new dataset if needed
+        if self._current_file_path != required_file_path:
+            if self._current_dataset is not None:
+                self._current_dataset.close()
+            self._current_dataset = xr.open_dataset(required_file_path)
+            self._current_file_path = required_file_path
+            
+        self._last_used_file_path = required_file_path
+        return self._current_dataset, local_time_index
 
     def _set_masks(self):
         """Use reference variable to infer the mask"""
 
-        var = self.dataset[self.reference_var_name].isel({self.time_dim_name: 0})
+        var = self._metadata_dataset[self.reference_var_name].isel({self.time_dim_name: 0})
         var_mask = self.get_mask(var)
 
         if not self.has_depth_dimension:
@@ -149,8 +224,8 @@ class CMEMSReader:
         A 2D meshgrid is first formed from the 1D lon-lat variables. Unmasked
         lons and lats are then identified from this.
         """
-        lons = self.dataset.variables[f"{self.lon_dim_name}"][:]
-        lats = self.dataset.variables[f"{self.lat_dim_name}"][:]
+        lons = self._metadata_dataset.variables[f"{self.lon_dim_name}"][:]
+        lats = self._metadata_dataset.variables[f"{self.lat_dim_name}"][:]
         self._lon_grid, self._lat_grid = np.meshgrid(lons, lats)
 
         self._unmasked_lons = self._lon_grid[~self.mask_2D]
@@ -174,19 +249,19 @@ class CMEMSReader:
         if not self.has_depth_dimension:
             raise PyFVCOM2ValueError("The dataset does not have a depth dimension.")
 
-        return self.dataset.sizes[self.depth_dim_name]
+        return self._metadata_dataset.sizes[self.depth_dim_name]
 
     @property
     def dates(self):
-        return self.dataset[self.time_dim_name].data
+        return np.array(self._all_dates)
 
     @property
     def lons(self):
-        return self.dataset.variables[f"{self.lon_dim_name}"][:]
+        return self._metadata_dataset.variables[f"{self.lon_dim_name}"][:]
 
     @property
     def lats(self):
-        return self.dataset.variables[f"{self.lat_dim_name}"][:]
+        return self._metadata_dataset.variables[f"{self.lat_dim_name}"][:]
 
     @property
     def lons_2D(self):
@@ -209,7 +284,7 @@ class CMEMSReader:
         if not self.has_depth_dimension:
             raise PyFVCOM2ValueError("The dataset does not have a depth dimension.")
 
-        return -self.dataset.variables[f"{self.depth_dim_name}"][:].values
+        return -self._metadata_dataset.variables[f"{self.depth_dim_name}"][:].values
 
     def contains_date(self, date_time: datetime) -> bool:
         """Check if the dataset contains the given date_time.
@@ -256,12 +331,12 @@ class CMEMSReader:
         Returns:
             int: Number of dimensions.
         """
-        if var_name not in self.dataset.variables:
+        if var_name not in self._metadata_dataset.variables:
             raise PyFVCOM2ValueError(
                 f"The supplied variable {var_name} is not in the dataset(s) {self.file_paths}"
             )
 
-        var = self.dataset[var_name]
+        var = self._metadata_dataset[var_name]
         return len(var.dims)
 
     def get_mask(self, var) -> np.ndarray:
@@ -325,24 +400,27 @@ class CMEMSReader:
         return self._bottom_indices
 
     def get_var(
-        self, var_name: str, time_index: int = 0, depth_index: int = None
+        self, var_name: str, target_datetime: datetime, depth_index: int = None, tolerance=None
     ) -> np.ndarray:
-        """Get the values of a variable at a given time and depth index.
+        """Get the values of a variable at a given datetime and depth index.
 
         Args:
             var_name (str): Variable name.
-            time_index (int): Time index.
+            target_datetime (datetime): Target datetime to retrieve data for.
             depth_index (int, optional): Depth index for 3D variables. Defaults to None.
+            tolerance (timedelta, optional): Maximum allowed time difference. Defaults to None.
         Returns:
             np.ndarray: Variable values.
         """
-        if var_name not in self.dataset.variables:
+        dataset, local_time_index = self._load_dataset_for_datetime(target_datetime, tolerance)
+        
+        if var_name not in dataset.variables:
             raise PyFVCOM2ValueError(
                 f"The supplied variable {var_name} is not in the dataset"
             )
 
         if not self.has_depth_dimension:
-            var = self.dataset[var_name].isel({self.time_dim_name: time_index})
+            var = dataset[var_name].isel({self.time_dim_name: local_time_index})
             var_data = var.values
             return var_data
 
@@ -351,31 +429,34 @@ class CMEMSReader:
                 raise PyFVCOM2ValueError(
                     "depth_index must be provided for 3D variables"
                 )
-            var = self.dataset[var_name].isel(
-                {self.time_dim_name: time_index, self.depth_dim_name: depth_index}
+            var = dataset[var_name].isel(
+                {self.time_dim_name: local_time_index, self.depth_dim_name: depth_index}
             )
             var_data = var.values
             return var_data
 
     def get_unmasked_variable(
-        self, var_name: str, time_index: int = 0, depth_index: int = None
+        self, var_name: str, target_datetime: datetime, depth_index: int = None, tolerance=None
     ) -> np.ndarray:
-        """Get the unmasked values of a variable at a given time and depth index.
+        """Get the unmasked values of a variable at a given datetime and depth index.
 
         Args:
             var_name (str): Variable name.
-            time_index (int): Time index.
+            target_datetime (datetime): Target datetime to retrieve data for.
             depth_index (int, optional): Depth index for 3D variables. Defaults to None.
+            tolerance (timedelta, optional): Maximum allowed time difference. Defaults to None.
         Returns:
             np.ndarray: Unmasked variable values.
         """
-        if var_name not in self.dataset.variables:
+        dataset, local_time_index = self._load_dataset_for_datetime(target_datetime, tolerance)
+        
+        if var_name not in dataset.variables:
             raise PyFVCOM2ValueError(
                 f"The supplied variable {var_name} is not in the dataset"
             )
 
         if not self.has_depth_dimension:
-            var = self.dataset[var_name].isel({self.time_dim_name: time_index})
+            var = dataset[var_name].isel({self.time_dim_name: local_time_index})
             var_data = var.values
             return var_data[~self.mask_2D]
 
@@ -384,13 +465,13 @@ class CMEMSReader:
                 raise PyFVCOM2ValueError(
                     "depth_index must be provided for 3D variables"
                 )
-            var = self.dataset[var_name].isel(
-                {self.time_dim_name: time_index, self.depth_dim_name: depth_index}
+            var = dataset[var_name].isel(
+                {self.time_dim_name: local_time_index, self.depth_dim_name: depth_index}
             )
             var_data = var.values
             return var_data[~self.mask_2D]
 
-    def get_filled_3D_var(self, var_name: str, time_index: int = 0) -> np.ndarray:
+    def get_filled_3D_var(self, var_name: str, target_datetime: datetime, tolerance=None) -> np.ndarray:
         """Fill masked values in a 3D variable by interpolation
 
         First, use griddata to interpolate over all masked surface values.
@@ -399,17 +480,20 @@ class CMEMSReader:
 
         Args:
             var_name (str): Variable name.
-            time_index (int): Time index.
+            target_datetime (datetime): Target datetime to retrieve data for.
+            tolerance (timedelta, optional): Maximum allowed time difference. Defaults to None.
 
         Returns:
             np.ndarray: Filled variable values.
         """
-        if var_name not in self.dataset.variables:
+        dataset, local_time_index = self._load_dataset_for_datetime(target_datetime, tolerance)
+        
+        if var_name not in dataset.variables:
             raise PyFVCOM2ValueError(
                 f"Variable {var_name} was not specified as a 3D variable"
             )
 
-        var = self.dataset[var_name].isel({self.time_dim_name: time_index})
+        var = dataset[var_name].isel({self.time_dim_name: local_time_index})
         var_data = var.values  # shape (depth, lat, lon)
 
         # Create an array to hold filled data
@@ -432,7 +516,7 @@ class CMEMSReader:
             ~self.mask_3D[1:, :, :]
         ]
 
-        # Now extraplolate downwards
+        # Now extrapolate downwards
         bottom_indices = self.get_bottom_indices()
         for j in range(var_data.shape[1]):
             for i in range(var_data.shape[2]):
@@ -442,7 +526,30 @@ class CMEMSReader:
         return var_data_filled
 
     def close(self):
-        """Close the dataset to free up resources."""
-        if self.dataset is not None:
-            self.dataset.close()
-            self.dataset = None
+        """Close all datasets to free up resources."""
+        if self._metadata_dataset is not None:
+            self._metadata_dataset.close()
+            self._metadata_dataset = None
+            
+        if self._current_dataset is not None:
+            self._current_dataset.close()
+            self._current_dataset = None
+            
+        self._current_file_path = None
+        self._last_used_file_path = None
+        
+    # Backward compatibility methods that convert time_index to datetime
+    def get_var_by_index(self, var_name: str, time_index: int = 0, depth_index: int = None) -> np.ndarray:
+        """Backward compatibility method using time index"""
+        target_datetime = self._all_dates[time_index]
+        return self.get_var(var_name, target_datetime, depth_index)
+        
+    def get_unmasked_var_by_index(self, var_name: str, time_index: int = 0, depth_index: int = None) -> np.ndarray:
+        """Backward compatibility method using time index"""
+        target_datetime = self._all_dates[time_index]
+        return self.get_unmasked_var(var_name, target_datetime, depth_index)
+        
+    def get_filled_3D_var_by_index(self, var_name: str, time_index: int = 0) -> np.ndarray:
+        """Backward compatibility method using time index"""
+        target_datetime = self._all_dates[time_index]
+        return self.get_filled_3D_var(var_name, target_datetime)
