@@ -2,7 +2,7 @@ import numpy as np
 from typing import Optional
 
 from .mesh_reader import MeshData, read_mesh_file
-from .sigma_reader import SigmaConfig, process_sigma_config, read_sigma_file
+from .sigma_reader import SigmaConfig, SigmaData, process_sigma_config, read_sigma_file
 from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
 from .interpolation_coordinates import InterpolationCoordinates
@@ -95,7 +95,7 @@ class Grid:
     def __init__(
         self,
         mesh_data: MeshData,
-        sigma_config: SigmaConfig,
+        sigma_data: SigmaData,
         coordinate_system: str,
         epsg_code: Optional[str] = None,
     ):
@@ -131,7 +131,7 @@ class Grid:
 
         # Vertical grid
         # -------------
-        self._add_sigma_coordinates(sigma_config)
+        self._add_sigma_coordinates(sigma_data)
 
         # Open boundaries
         # ---------------
@@ -220,14 +220,12 @@ class Grid:
         """Get the number of open boundaries."""
         return len(self.open_boundaries)
 
-    def _add_sigma_coordinates(self, sigma_config: SigmaConfig):
+    def _add_sigma_coordinates(self, sigma_data: SigmaData):
         """ Add sigma coordinates from a sigma configuration.
         
         Args:
-            sigma_config: Sigma configuration parameters.
+            sigma_data: Sigma data.
         """
-        sigma_data = process_sigma_config(sigma_config, self.h)
-
         self.sigma_config = sigma_data.sigma_config
         self.sigma_levels = sigma_data.sigma_levels
 
@@ -301,9 +299,15 @@ def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_syst
     Returns:
         Grid: The created Grid object.
     """
+    # Read mesh data
     mesh_data = read_mesh_file(grid_file, mesh_type=mesh_type, **kwargs)
+
+    # Read sigma data
     sigma_config = read_sigma_file(sigma_file)
-    return Grid(mesh_data, sigma_config, coordinate_system, epsg_code)
+    sigma_data = process_sigma_config(sigma_config, mesh_data.x3)
+
+    return Grid(mesh_data, sigma_data, coordinate_system, epsg_code)
+
 
 def connectivity(p, t):
     """
