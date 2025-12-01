@@ -1,6 +1,6 @@
 """FVCOM Plotting Functions"""
 
-from typing import Optional
+from typing import Optional, Union
 import numpy as np
 from netCDF4 import Dataset
 
@@ -8,17 +8,19 @@ import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.tri import Triangulation
 from matplotlib.collections import PolyCollection
-from matplotlib.colors import Normalize
-from matplotlib import cm as mplcm
 from matplotlib import quiver as mpl_quiver
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import cartopy.crs as ccrs
 from cartopy.mpl.gridliner import LONGITUDE_FORMATTER, LATITUDE_FORMATTER
 from cmocean import cm
+from abc import abstractmethod
+
+from ..grid import Grid
 
 __all__ = [
     "PyFVCOM2Plotter",
     "FVCOMPlotter",
+    "CMEMSPlotter",
     "create_figure",
     "create_cbar_ax",
     "cm2inch",
@@ -56,8 +58,6 @@ class PyFVCOM2Plotter:
 
         self.line_width = line_width
 
-        self.current_zorder = 1
-
     def _add_colour_bar(
         self,
         figure: matplotlib.figure.Figure,
@@ -73,6 +73,26 @@ class PyFVCOM2Plotter:
         if cb_label:
             cbar.set_label(cb_label, size=self.font_size)
         return
+
+    @abstractmethod
+    def plot_field(
+        self,
+        ax: matplotlib.axes.Axes,
+        field: np.ndarray,
+        **kwargs
+    ) -> matplotlib.axes.Axes:
+        """Map the supplied field
+
+        Additional plotting options are passed to `matplotlib.pyplot.pcolormesh`. See the matplotlib documentation
+        for a full list of supported options.
+
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            field (np.ndarray): The field to plot.
+        Returns:
+            matplotlib.axes.Axes: Axes object
+        """
+        pass
 
     def plot_lines(
         self,
@@ -107,7 +127,6 @@ class PyFVCOM2Plotter:
         line_plots = ax.plot(
             x,
             y,
-            zorder=3,
             alpha=alpha,
             color=color,
             linewidth=linewidth,
@@ -122,22 +141,14 @@ class PyFVCOM2Plotter:
         _transform = transform
         if self.geographic_coords and (transform is None):
             print(
-                f"Plotting in geographic coordinates but not transform supplied. Using PlateCarree. "
+                f"Plotting in geographic coordinates but no transform supplied. Using PlateCarree. "
                 f"You can override this by supplying a transform argument."
             )
             _transform = ccrs.PlateCarree()
 
         return _transform
 
-    def _get_zorder(self):
-        """Get the zorder for plotting
 
-        Returns:
-            int: The zorder to use for plotting
-        """
-        zorder = self.current_zorder
-        self.current_zorder += 1
-        return zorder
 
     def remove_line_plots(self, line_plots: list):
         """Remove line plots
@@ -152,11 +163,13 @@ class PyFVCOM2Plotter:
 
         return
 
+    @abstractmethod
     def scatter(
         self,
         ax: matplotlib.axes.Axes,
         x: np.ndarray,
         y: np.ndarray,
+        c: Optional[np.ndarray] = None,
         configure: Optional[bool] = False,
         extents: Optional[list] = None,
         transform: Optional[ccrs.Projection] = None,
@@ -177,6 +190,8 @@ class PyFVCOM2Plotter:
             ax (matplotlib.axes.Axes): Axes object
             x (np.ndarray): Array of 'x' positions. If plotting in geographic coords, these should be longitudes.
             y (np.ndarray): Array of 'y' positions. If plotting in geographic coords, these should be latitudes.
+            c (np.ndarray, optional): Array of colour values for each point. If provided, this will be used to
+            colour the points in the scatter plot.
             configure (bool, optional): If true, configure the plot by setting plot extents, drawing coastlines etc. Default: False.
             extents (list, optional): Four element list giving lon/lat limits (e.g. [-4.56, -3.76, 55.12, 55.84])
             transform (ccrs.Projection, optional): The type of transform to perform if geographic_coords is True.
@@ -188,50 +203,16 @@ class PyFVCOM2Plotter:
         Returns:
             tuple: (ax, scatter_plot) - Axes object and scatter plot collection
         """
-        transform = self._check_transform(transform)
+        pass
 
-        zorder = self._get_zorder()
-
-        # Check to see if a field has already been plotted, indicating we can simply make
-        # the scatter plot without setting up the plot axes in full.
-        if not configure:
-            if self.geographic_coords:
-                scatter_plot = ax.scatter(
-                    x, y, transform=transform, zorder=zorder, **kwargs
-                )
-            else:
-                scatter_plot = ax.scatter(x, y, zorder=zorder, **kwargs)
-
-            return ax, scatter_plot
-
-        # Create a new plot
-        # -----------------
-
-        # Set extents
-        if extents is None:
-            extents = self._get_default_extents()
-
-        # Create plot
-        if self.geographic_coords:
-            scatter_plot = ax.scatter(
-                x, y, transform=transform, zorder=zorder, **kwargs
-            )
-            ax.set_extent(extents, transform)
-
-            if draw_coastlines:
-                ax.coastlines(resolution=resolution, linewidth=self.line_width)
-
-            if tick_inc:
-                self._add_ticks(ax)
-        else:
-            scatter_plot = ax.scatter(x, y, zorder=zorder, **kwargs)
-            ax.set_xlim(extents[:2])
-            ax.set_ylim(extents[2:])
-
-            ax.set_xlabel("x (m)", fontsize=self.font_size)
-            ax.set_ylabel("y (m)", fontsize=self.font_size)
-
-        return ax, scatter_plot
+    @abstractmethod
+    def _get_default_extents(self):
+        """Get the default plot extents
+        
+        Returns:
+            np.ndarray: Array of [xmin, xmax, ymin, ymax]
+        """
+        pass
 
     def set_title(self, ax, title):
         """Set the title
@@ -258,21 +239,24 @@ class PyFVCOM2Plotter:
 
 
 class FVCOMPlotter(PyFVCOM2Plotter):
-    """Create FVCOM plot objects based on FVCOM model outputs
+    """Create FVCOM plot objects based on FVCOM model outputs or Grid objects
 
     Class to assist in the creation of plots and animations based on FVCOM
-    data.
+    data. Grid information can be provided either from a FVCOM NetCDF file
+    or from a pre-existing Grid object.
 
     Args:
-        fvcom_file_name (str): Path to a FVCOM NetCDF file.
-        geographic_coords (bool, optional): Whether to use geographic coordinates. Default True.
+        fvcom_source (Union[str, Grid]): Either a path to a FVCOM NetCDF file 
+            or a Grid object containing the mesh information.
+        geographic_coords (bool, optional): Whether to use geographic coordinates. 
+            Default True. Ignored if fvcom_source is a Grid object.
         font_size (int, optional): Font size for plot text. Default 10.
         line_width (float, optional): Default line width for plotting. Default 0.2.
     """
 
     def __init__(
         self,
-        fvcom_file_name: str,
+        fvcom_source: Union[str, Grid],
         geographic_coords: Optional[bool] = True,
         font_size: Optional[int] = 10,
         line_width: Optional[float] = 0.2,
@@ -280,10 +264,52 @@ class FVCOMPlotter(PyFVCOM2Plotter):
         # Initialise base class
         super().__init__(geographic_coords, font_size, line_width)
 
-        # Open the NetCDF file for reading
-        with Dataset(fvcom_file_name, "r") as ds:
-            # Read grid information
-            self._read_grid_information(ds)
+        # Check if input is a Grid object or file path
+        if isinstance(fvcom_source, Grid):
+            self._read_grid_from_object(fvcom_source)
+        elif isinstance(fvcom_source, str):
+            # Open the NetCDF file for reading
+            with Dataset(fvcom_source, "r") as ds:
+                # Read grid information
+                self._read_grid_information(ds)
+        else:
+            raise TypeError(
+                "fvcom_source must be either a file path (str) or a Grid object"
+            )
+
+    def _read_grid_from_object(self, grid: Grid):
+        """Read grid information from a Grid object.
+        
+        Args:
+            grid (Grid): Grid object containing mesh information.
+        """
+        # Read in the required grid variables from Grid object
+        self.n_nodes = grid.n_nodes
+        self.n_elems = grid.n_elements
+        
+        # Grid triangles need to be converted to the format expected by matplotlib
+        # Grid.triangles is 0-indexed, which is what matplotlib expects
+        self.nv = grid.triangles
+        
+        # Coordinates - Grid object always has both geographic and cartesian
+        if self.geographic_coords:
+            self.x = grid.lon
+            self.y = grid.lat
+            self.xc = grid.lonc
+            self.yc = grid.latc
+            self.transform = ccrs.PlateCarree()
+        else:
+            self.x = grid.x
+            self.y = grid.y
+            self.xc = grid.xc
+            self.yc = grid.yc
+            self.transform = None
+
+        # Triangles for matplotlib
+        self.triangles = self.nv
+
+        # Store triangulation
+        self.tri = Triangulation(self.x, self.y, self.triangles)
 
     def _read_grid_information(self, ds):
         # Read in the required grid variables
@@ -366,16 +392,13 @@ class FVCOMPlotter(PyFVCOM2Plotter):
                 "update=True but no existing PolyCollection object found on the axes"
             )
 
-        # Determine current zorder
-        zorder = self._get_zorder()
-
         # If not configuring the plot, simply plot the field and return
         if self.geographic_coords:
             plot = ax.tripcolor(
-                self.tri, field, transform=self.transform, zorder=zorder, **kwargs
+                self.tri, field, transform=self.transform, **kwargs
             )
         else:
-            plot = ax.tripcolor(self.tri, field, zorder=zorder, **kwargs)
+            plot = ax.tripcolor(self.tri, field, **kwargs)
 
         if not configure:
             return ax, plot
@@ -408,6 +431,78 @@ class FVCOMPlotter(PyFVCOM2Plotter):
             self._add_colour_bar(figure, ax, plot, cb_label)
 
         return ax, plot
+
+    def scatter(
+        self,
+        ax: matplotlib.axes.Axes,
+        x: np.ndarray,
+        y: np.ndarray,
+        c: Optional[np.ndarray] = None,
+        configure: Optional[bool] = False,
+        extents: Optional[list] = None,
+        transform: Optional[ccrs.Projection] = None,
+        draw_coastlines: Optional[bool] = False,
+        resolution: Optional[str] = "10m",
+        tick_inc: Optional[bool] = False,
+        **kwargs,
+    ):
+        """Create an FVCOM-specific scatter plot using the provided x and y values
+
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            x (np.ndarray): Array of 'x' positions. If plotting in geographic coords, these should be longitudes.
+            y (np.ndarray): Array of 'y' positions. If plotting in geographic coords, these should be latitudes.
+            c (np.ndarray, optional): Array of colour values for each point.
+            configure (bool, optional): If true, configure the plot by setting extents, coastlines etc.
+            extents (list, optional): Four element list giving lon/lat limits
+            transform (ccrs.Projection, optional): Transform for geographic projections
+            draw_coastlines (bool, optional): Draw coastlines? Only used if geographic_coords is True.
+            resolution (str, optional): Coastline resolution. Default: '10m'.
+            tick_inc (bool, optional): Draw ticks? Only used if geographic_coords is True.
+            **kwargs: Additional keyword arguments passed to matplotlib scatter
+
+        Returns:
+            tuple: (ax, scatter_plot) - Axes object and scatter plot collection
+        """
+        transform = self._check_transform(transform)
+
+        # Check to see if a field has already been plotted
+        if not configure:
+            if self.geographic_coords:
+                scatter_plot = ax.scatter(
+                    x, y, c=c, transform=transform, **kwargs
+                )
+            else:
+                scatter_plot = ax.scatter(x, y, c=c, **kwargs)
+            return ax, scatter_plot
+
+        # Create a new plot with full configuration
+        if extents is None:
+            extents = self._get_default_extents()
+
+        if self.geographic_coords:
+            scatter_plot = ax.scatter(
+                x, y, c=c, transform=transform, **kwargs
+            )
+            ax.set_extent(extents, transform)
+
+            if draw_coastlines:
+                ax.coastlines(resolution=resolution, linewidth=self.line_width)
+
+            if tick_inc:
+                self._add_ticks(ax)
+
+            ax.set_xlabel("Longitude (E)", fontsize=self.font_size)
+            ax.set_ylabel("Latitude (N)", fontsize=self.font_size)
+        else:
+            scatter_plot = ax.scatter(x, y, c=c, **kwargs)
+            ax.set_xlim(extents[:2])
+            ax.set_ylim(extents[2:])
+
+            ax.set_xlabel("x (m)", fontsize=self.font_size)
+            ax.set_ylabel("y (m)", fontsize=self.font_size)
+
+        return ax, scatter_plot
 
     def plot_quiver(
         self,
@@ -485,7 +580,6 @@ class FVCOMPlotter(PyFVCOM2Plotter):
             )
 
         # Create the quiver plot
-        zorder = self._get_zorder()
         quiver = ax.quiver(
             self.xc[points],
             self.yc[points],
@@ -495,7 +589,6 @@ class FVCOMPlotter(PyFVCOM2Plotter):
             units="inches",
             scale_units="inches",
             scale=scale,
-            zorder=zorder,
             **kwargs,
         )
 
@@ -541,10 +634,178 @@ class FVCOMPlotter(PyFVCOM2Plotter):
         Returns:
             matplotlib.axes.Axes: Axes object
         """
-        zorder = self._get_zorder()
-        ax.triplot(self.tri, zorder=zorder, **kwargs)
+        ax.triplot(self.tri, **kwargs)
 
         return ax
+
+
+class CMEMSPlotter(PyFVCOM2Plotter):
+    """Class for plotting CMEMS data
+
+    Args:
+        cmems_file_name (str): Path to a CMEMS NetCDF file.
+        font_size (int, optional): Font size for plot text. Default 10.
+        line_width (float, optional): Default line width for plotting. Default 0.2.
+    """
+    
+    def __init__(
+        self,
+        cmems_file_name: str,
+        font_size: Optional[int] = 10,
+        line_width: Optional[float] = 0.2,
+    ):
+        # Initialise base class
+        super().__init__(geographic_coords=True, font_size=font_size, line_width=line_width)
+
+        # Open the NetCDF file for reading
+        with Dataset(cmems_file_name, "r") as ds:
+            # Read grid information
+            self._read_grid_information(ds)
+        
+        # Set the transform
+        self.transform = ccrs.PlateCarree()
+
+    def _read_grid_information(self, ds):
+        # Read in the required grid variables
+        self.lon = ds.variables["longitude"][:]
+        self.lat = ds.variables["latitude"][:]
+        try:
+            self.depth = ds.variables["depth"][:]
+        except KeyError:
+            self.depth = None
+
+    def _get_default_extents(self):
+        return np.array([self.lon.min(), self.lon.max(), self.lat.min(), self.lat.max()])
+
+    def plot_field(
+        self,
+        ax: matplotlib.axes.Axes,
+        field: np.ndarray,
+        configure: Optional[bool] = True,
+        add_colour_bar: Optional[bool] = True,
+        cb_label: Optional[str] = None,
+        tick_inc: Optional[bool] = True,
+        extents: Optional[list] = None,
+        draw_coastlines: Optional[bool] = False,
+        resolution: Optional[str] = "10m",
+        **kwargs
+    ):
+        """Map the supplied field
+
+        Additional plotting options are passed to `matplotlib.pyplot.pcolormesh`. See the matplotlib documentation
+        for a full list of supported options.
+
+        Args:
+            ax (matplotlib.axes.Axes): Axes object.
+            field (np.ndarray): The field to plot.
+            configure (bool, optional): If true, configure the plot by setting plot extents, drawing coastlines etc. Default: True.
+            add_colour_bar (bool, optional): If true, draw a colour bar. Default: True.
+            cb_label (str, optional): The colour bar label.
+            tick_inc (bool, optional): Add coordinate axes (i.e. lat/long). Default: True.
+            extents (list, optional): Four element numpy array giving lon/lat limits (e.g. [-4.56, -3.76, 49.96, 50.44]). Default: None.
+            draw_coastlines (bool, optional): Draw coastlines. Default: False.
+            resolution (str, optional): Resolution to use when plotting the coastline. Only used when draw_coastline=True. Default: '10m'.
+            **kwargs: Additional keyword arguments passed to matplotlib pcolormesh.
+        Returns:
+            tuple: (axes, plot) - Axes object and PolyCollection plot object.
+        """
+        # Create the plot
+        plot = ax.pcolormesh(
+            self.lon,
+            self.lat,
+            field,
+            transform=self.transform,
+            **kwargs
+        )
+
+        if not configure:
+            return ax, plot
+
+        # Set extents
+        if extents is None:
+            extents = self._get_default_extents()
+
+        # Create plot
+        ax.set_extent(extents, self.transform)
+
+        if draw_coastlines:
+            ax.coastlines(resolution=resolution, linewidth=self.line_width)
+
+        if tick_inc:
+            self._add_ticks(ax)
+
+        ax.set_xlabel("Longitude (E)", fontsize=self.font_size)
+        ax.set_ylabel("Longitude (N)", fontsize=self.font_size)
+
+        # Add colour bar
+        if add_colour_bar:
+            figure = ax.get_figure()
+            self._add_colour_bar(figure, ax, plot, cb_label)
+
+        return ax, plot
+
+    def scatter(
+        self,
+        ax: matplotlib.axes.Axes,
+        x: np.ndarray,
+        y: np.ndarray,
+        c: Optional[np.ndarray] = None,
+        configure: Optional[bool] = False,
+        extents: Optional[list] = None,
+        transform: Optional[ccrs.Projection] = None,
+        draw_coastlines: Optional[bool] = False,
+        resolution: Optional[str] = "10m",
+        tick_inc: Optional[bool] = False,
+        **kwargs,
+    ):
+        """Create a CMEMS-specific scatter plot using the provided x and y values
+
+        Args:
+            ax (matplotlib.axes.Axes): Axes object
+            x (np.ndarray): Array of longitude positions.
+            y (np.ndarray): Array of latitude positions.
+            c (np.ndarray, optional): Array of colour values for each point.
+            configure (bool, optional): If true, configure the plot by setting extents, coastlines etc.
+            extents (list, optional): Four element list giving lon/lat limits
+            transform (ccrs.Projection, optional): Transform for geographic projections (uses self.transform if None)
+            draw_coastlines (bool, optional): Draw coastlines.
+            resolution (str, optional): Coastline resolution. Default: '10m'.
+            tick_inc (bool, optional): Draw ticks.
+            **kwargs: Additional keyword arguments passed to matplotlib scatter
+
+        Returns:
+            tuple: (ax, scatter_plot) - Axes object and scatter plot collection
+        """
+        if transform is None:
+            transform = self.transform
+
+        # Simple scatter if not configuring
+        if not configure:
+            scatter_plot = ax.scatter(
+                x, y, c=c, transform=transform, **kwargs
+            )
+            return ax, scatter_plot
+
+        # Full plot configuration
+        if extents is None:
+            extents = self._get_default_extents()
+
+        scatter_plot = ax.scatter(
+            x, y, c=c, transform=transform, **kwargs
+        )
+        
+        ax.set_extent(extents, transform)
+
+        if draw_coastlines:
+            ax.coastlines(resolution=resolution, linewidth=self.line_width)
+
+        if tick_inc:
+            self._add_ticks(ax)
+
+        ax.set_xlabel("Longitude (E)", fontsize=self.font_size)
+        ax.set_ylabel("Latitude (N)", fontsize=self.font_size)
+
+        return ax, scatter_plot
 
 
 def create_figure(
