@@ -1,4 +1,4 @@
-import xarrray as xr
+import xarray as xr
 import numpy as np
 from typing import NamedTuple, Optional, List
 from abc import ABC, abstractmethod
