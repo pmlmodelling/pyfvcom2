@@ -2,6 +2,7 @@
 
 from typing import Optional, Union
 import numpy as np
+from pathlib import Path
 from netCDF4 import Dataset
 
 import matplotlib
@@ -246,8 +247,8 @@ class FVCOMPlotter(PyFVCOM2Plotter):
     or from a pre-existing Grid object.
 
     Args:
-        fvcom_source (Union[str, Grid]): Either a path to a FVCOM NetCDF file 
-            or a Grid object containing the mesh information.
+        fvcom_source (Union[str, Path, Grid]): Either a path to a FVCOM NetCDF file 
+            (as string or Path object) or a Grid object containing the mesh information.
         geographic_coords (bool, optional): Whether to use geographic coordinates. 
             Default True. Ignored if fvcom_source is a Grid object.
         font_size (int, optional): Font size for plot text. Default 10.
@@ -256,7 +257,7 @@ class FVCOMPlotter(PyFVCOM2Plotter):
 
     def __init__(
         self,
-        fvcom_source: Union[str, Grid],
+        fvcom_source: Union[str, Path, Grid],
         geographic_coords: Optional[bool] = True,
         font_size: Optional[int] = 10,
         line_width: Optional[float] = 0.2,
@@ -267,14 +268,14 @@ class FVCOMPlotter(PyFVCOM2Plotter):
         # Check if input is a Grid object or file path
         if isinstance(fvcom_source, Grid):
             self._read_grid_from_object(fvcom_source)
-        elif isinstance(fvcom_source, str):
+        elif isinstance(fvcom_source, (str, Path)):
             # Open the NetCDF file for reading
-            with Dataset(fvcom_source, "r") as ds:
+            with Dataset(str(fvcom_source), "r") as ds:
                 # Read grid information
                 self._read_grid_information(ds)
         else:
             raise TypeError(
-                "fvcom_source must be either a file path (str) or a Grid object"
+                "fvcom_source must be either a file path (str or Path) or a Grid object"
             )
 
     def _read_grid_from_object(self, grid: Grid):
