@@ -74,16 +74,34 @@ import numpy as np
 
 
 __all__ = [
-    "pressure2depth", "depth2pressure", "dT_adiab_sw", "theta_sw", "cp_sw",
-    "sw_smow", "sw_dens0", "sw_seck", "sw_dens", "sw_svan", "sw_sal78",
-    "sw_sal80", "sw_salinity", "dens_jackett", "cond2salt", "zbar", "pea", 
-    "simpsonhunter", "mixedlayerdepth", "stokes", "dissipation", "rhum"
+    "pressure2depth",
+    "depth2pressure",
+    "dT_adiab_sw",
+    "theta_sw",
+    "cp_sw",
+    "sw_smow",
+    "sw_dens0",
+    "sw_seck",
+    "sw_dens",
+    "sw_svan",
+    "sw_sal78",
+    "sw_sal80",
+    "sw_salinity",
+    "dens_jackett",
+    "cond2salt",
+    "zbar",
+    "pea",
+    "simpsonhunter",
+    "mixedlayerdepth",
+    "stokes",
+    "dissipation",
+    "rhum",
 ]
 
 
 # Define some commonly used constants.
-c68 = 1.00024   # conversion constant to T68 temperature scale.
-c90 = 0.99976   # conversion constant to T90 temperature scale.
+c68 = 1.00024  # conversion constant to T68 temperature scale.
+c90 = 0.99976  # conversion constant to T90 temperature scale.
 
 
 def pressure2depth(p, lat):
@@ -101,10 +119,10 @@ def pressure2depth(p, lat):
         http://unesdoc.unesco.org/images/0005/000598/059832eb.pdf).
     """
 
-    x = np.sin(lat / 57.29578)**2
+    x = np.sin(lat / 57.29578) ** 2
     g = 9.780318 * (1.0 + (5.2788e-3 + 2.36e-5 * x) * x) + 1.092e-6 * p
 
-    z = ((((-1.82e-15 * p + 2.279e-10) * p - 2.2512e-5 ) * p + 9.72659) * p) / g
+    z = ((((-1.82e-15 * p + 2.279e-10) * p - 2.2512e-5) * p + 9.72659) * p) / g
 
     return z
 
@@ -129,9 +147,9 @@ def depth2pressure(z, lat):
 
     c2 = 2.21e-6
     Y = np.sin(np.deg2rad(np.abs(lat)))
-    c1 = (5.92 + (5.25 * Y**2.0)) * 1.e-3
+    c1 = (5.92 + (5.25 * Y**2.0)) * 1.0e-3
 
-    p = ((1.0 - c1) - np.sqrt((1.0 - c1)**2.0 - (4.0 * c2 * pz))) / (2.0 * c2)
+    p = ((1.0 - c1) - np.sqrt((1.0 - c1) ** 2.0 - (4.0 * c2 * pz))) / (2.0 * c2)
 
     return p
 
@@ -171,9 +189,13 @@ def dT_adiab_sw(t, s, p):
 
     T68 = t * c68  # convert to 1968 temperature scale
 
-    atg = a0 + (a1 + (a2 + a3 * T68) * T68) * T68 + (b0 + b1 * T68) * (s - 35) + \
-            ((c0 + (c1 + (c2 + c3 * T68) * T68) * T68) + (d0 + d1 * T68) *
-            (s - 35)) * p + (e0 + (e1 + e2 * T68) * T68) * p * p
+    atg = (
+        a0
+        + (a1 + (a2 + a3 * T68) * T68) * T68
+        + (b0 + b1 * T68) * (s - 35)
+        + ((c0 + (c1 + (c2 + c3 * T68) * T68) * T68) + (d0 + d1 * T68) * (s - 35)) * p
+        + (e0 + (e1 + e2 * T68) * T68) * p * p
+    )
 
     return atg
 
@@ -239,19 +261,19 @@ def cp_sw(t, s, p):
     # Check for values outside the valid ranges.
     if t.min() < -2:
         n = np.sum(t < -2)
-        print('WARNING: {} values below minimum value temperature (-2C)'.format(n))
+        print("WARNING: {} values below minimum value temperature (-2C)".format(n))
 
     if t.max() > 40:
         n = np.sum(t > 40)
-        print('WARNING: {} values above maximum value temperature (40C)'.format(n))
+        print("WARNING: {} values above maximum value temperature (40C)".format(n))
 
     if s.min() < 0:
         n = np.sum(s < 0)
-        print('WARNING: {} values below minimum salinity value (0 PSU)'.format(n))
+        print("WARNING: {} values below minimum salinity value (0 PSU)".format(n))
 
     if s.max() > 42:
         n = np.sum(s > 42)
-        print('WARNING: {} values above maximum salinity value (42C)'.format(n))
+        print("WARNING: {} values above maximum salinity value (42C)".format(n))
 
     # Convert from decibar to bar and temperature to the 1968 temperature scale.
     pbar = p / 10.0
@@ -304,9 +326,11 @@ def cp_sw(t, s, p):
     c2 = -6.5637e-11
     c3 = 6.136e-13
 
-    d1_cp = (pbar * (a0 + (a1 * T1) + (a2 * T2) + (a3 * T3) + (a4 * T4))) + \
-            (pbar**2 * (b0 + (b1 * T1) + (b2 * T2) + (b3 * T3) + (b4 * T4))) + \
-            (pbar**3 * (c0 + (c1 * T1) + (c2 * T2) + (c3 * T3)))
+    d1_cp = (
+        (pbar * (a0 + (a1 * T1) + (a2 * T2) + (a3 * T3) + (a4 * T4)))
+        + (pbar**2 * (b0 + (b1 * T1) + (b2 * T2) + (b3 * T3) + (b4 * T4)))
+        + (pbar**3 * (c0 + (c1 * T1) + (c2 * T2) + (c3 * T3)))
+    )
 
     d0 = 4.9247e-3
     d1 = -1.28315e-4
@@ -331,16 +355,19 @@ def cp_sw(t, s, p):
 
     j1 = -1.4300e-12
 
-    d2_cp = pbar * \
-            ((s * (d0 + (d1 * T1) + (d2 * T2) + (d3 * T3) + (d4 * T4))) +
-            (s**1.5 * (e0 + (e1 * T1) + (e2 * T2)))) + \
-            (pbar**2 * ((s * (f0 + (f1 * T1) + (f2 * T2) + (f3 * T3))) +
-            (g0 * s**1.5))) + (pbar**3 * ((s * (h0 + (h1 * T1) + (h2 * T2))) +
-            (j1 * T1 * s**1.5)))
+    d2_cp = (
+        pbar
+        * (
+            (s * (d0 + (d1 * T1) + (d2 * T2) + (d3 * T3) + (d4 * T4)))
+            + (s**1.5 * (e0 + (e1 * T1) + (e2 * T2)))
+        )
+        + (pbar**2 * ((s * (f0 + (f1 * T1) + (f2 * T2) + (f3 * T3))) + (g0 * s**1.5)))
+        + (pbar**3 * ((s * (h0 + (h1 * T1) + (h2 * T2))) + (j1 * T1 * s**1.5)))
+    )
 
     cp = cp_st0 + d1_cp + d2_cp
 
-    return(cp)
+    return cp
 
 
 def sw_smow(t):
@@ -363,8 +390,9 @@ def sw_smow(t):
 
     T68 = t * c68
 
-    dens = a0 + (a1 * T68) + (a2 * T68**2) + (a3 * T68**3) \
-            + (a4 * T68**4) + (a5 * T68**5)
+    dens = (
+        a0 + (a1 * T68) + (a2 * T68**2) + (a3 * T68**3) + (a4 * T68**4) + (a5 * T68**5)
+    )
 
     return dens
 
@@ -394,8 +422,11 @@ def sw_dens0(t, s):
 
     t68 = t * c68
 
-    dens = s * (b0 + (b1 * t68) + (b2 * t68**2) + (b3 * t68**3) + (b4 * t68**4)) + \
-            s**1.5 * (c0 + (c1 * t68) + (c2 * t68**2)) + (d0 * s**2)
+    dens = (
+        s * (b0 + (b1 * t68) + (b2 * t68**2) + (b3 * t68**3) + (b4 * t68**4))
+        + s**1.5 * (c0 + (c1 * t68) + (c2 * t68**2))
+        + (d0 * s**2)
+    )
 
     dens = dens + sw_smow(t68)
 
@@ -468,8 +499,11 @@ def sw_seck(t, s, p):
     g0 = 7.944e-2
 
     # Equation 16
-    K0 = KW + s * (f0 + (f1 * T68) + (f2 * T68**2) + (f3 * T68**3)) + \
-            s**1.5 * (g0 + (g1 * T68) + (g2 * T68**2))
+    K0 = (
+        KW
+        + s * (f0 + (f1 * T68) + (f2 * T68**2) + (f3 * T68**3))
+        + s**1.5 * (g0 + (g1 * T68) + (g2 * T68**2))
+    )
 
     # K at t, s, p
     K = K0 + (A * Patm) + (B * Patm**2)  # Equation 15
@@ -498,27 +532,29 @@ def sw_dens(t, s, p):
     # Check for values outside the valid ranges.
     if t.min() < -2:
         n = np.sum(t < -2)
-        print('WARNING: {} values below minimum value temperature (-2C)'.format(n))
+        print("WARNING: {} values below minimum value temperature (-2C)".format(n))
 
     if t.max() > 40:
         n = np.sum(t > 40)
-        print('WARNING: {} values above maximum value temperature (40C)'.format(n))
+        print("WARNING: {} values above maximum value temperature (40C)".format(n))
 
     if s.min() < 0:
         n = np.sum(s < 0)
-        print('WARNING: {} values below minimum salinity value (0 PSU)'.format(n))
+        print("WARNING: {} values below minimum salinity value (0 PSU)".format(n))
 
     if s.max() > 42:
         n = np.sum(s > 42)
-        print('WARNING: {} values above maximum salinity value (42C)'.format(n))
+        print("WARNING: {} values above maximum salinity value (42C)".format(n))
 
     if p.min() < 0:
         n = np.sum(p < 0)
-        print('WARNING: {} values below minimum pressure value (0 decibar)'.format(n))
+        print("WARNING: {} values below minimum pressure value (0 decibar)".format(n))
 
     if p.max() > 10000:
         n = np.sum(p > 10000)
-        print('WARNING: {} values above maximum pressure value (10000 decibar)'.format(n))
+        print(
+            "WARNING: {} values above maximum pressure value (10000 decibar)".format(n)
+        )
 
     dens0 = sw_dens0(t, s)
     k = sw_seck(t, s, p)
@@ -577,19 +613,26 @@ def sw_sal78(c, t, p):
     DT = t - 15.0
 
     # Convert conductivity to salinity
-    rt35 = np.array((((1.0031E-9 * t - 6.9698E-7) * t + 1.104259E-4)
-            * t + 2.00564E-2) * t + 0.6766097)
-    a0 = np.array(-3.107E-3 * t + 0.4215)
-    b0 = np.array((4.464E-4 * t + 3.426E-2) * t + 1.0)
-    c0 = np.array(((3.989E-12 * p - 6.370E-8) * p + 2.070E-4) * p)
+    rt35 = np.array(
+        (((1.0031e-9 * t - 6.9698e-7) * t + 1.104259e-4) * t + 2.00564e-2) * t
+        + 0.6766097
+    )
+    a0 = np.array(-3.107e-3 * t + 0.4215)
+    b0 = np.array((4.464e-4 * t + 3.426e-2) * t + 1.0)
+    c0 = np.array(((3.989e-12 * p - 6.370e-8) * p + 2.070e-4) * p)
 
     R = np.array(c / C1535)
     RT = np.sqrt(np.abs(R / (rt35 * (1.0 + c0 / (b0 + a0 * R)))))
 
-    s = np.array(((((2.7081 * RT - 7.0261) * RT + 14.0941) * RT + 25.3851)
-        * RT - 0.1692) * RT + 0.0080 + (DT / (1.0 + 0.0162 * DT)) *
-            (((((-0.0144 * RT + 0.0636) * RT - 0.0375) *
-            RT - 0.0066) * RT - 0.0056) * RT + 0.0005))
+    s = np.array(
+        ((((2.7081 * RT - 7.0261) * RT + 14.0941) * RT + 25.3851) * RT - 0.1692) * RT
+        + 0.0080
+        + (DT / (1.0 + 0.0162 * DT))
+        * (
+            ((((-0.0144 * RT + 0.0636) * RT - 0.0375) * RT - 0.0066) * RT - 0.0056) * RT
+            + 0.0005
+        )
+    )
 
     # Zero salinity trap
     if len(s.shape) > 0:
@@ -626,7 +669,7 @@ def dens_jackett(th, s, p=None):
     """Compute the in-situ density according to the Jackett et al. (2005) equation of state.
 
     This equation of state for sea water is based on the Gibbs potential
-    developed by Fiestel (2003). The pressure dependence can be switched on (off by default) 
+    developed by Fiestel (2003). The pressure dependence can be switched on (off by default)
     by giving an absolute pressure value (> 0).
 
     Args:
@@ -639,7 +682,7 @@ def dens_jackett(th, s, p=None):
 
     Notes:
         The check value is dens_jackett(20, 20, 1000) = 1017.728868019642.
-        
+
         Adopted from GOTM (www.gotm.net) (Original author(s): Hans Burchard
         & Karsten Bolding) and the PMLPython script EqS.py.
 
@@ -658,38 +701,55 @@ def dens_jackett(th, s, p=None):
     th2 = th * th
     sqrts = np.sqrt(s)
 
-    anum = 9.9984085444849347e+02 + \
-            th * (7.3471625860981584e+00 +
-            th * (-5.3211231792841769e-02 +
-            th * 3.6492439109814549e-04)) + \
-            s * (2.5880571023991390e+00 -
-            th * 6.7168282786692355e-03 +
-            s * 1.9203202055760151e-03)
+    anum = (
+        9.9984085444849347e02
+        + th
+        * (
+            7.3471625860981584e00
+            + th * (-5.3211231792841769e-02 + th * 3.6492439109814549e-04)
+        )
+        + s
+        * (
+            2.5880571023991390e00
+            - th * 6.7168282786692355e-03
+            + s * 1.9203202055760151e-03
+        )
+    )
 
-    aden = 1.0 + \
-            th * (7.2815210113327091e-03 +
-            th * (-4.4787265461983921e-05 +
-            th * (3.3851002965802430e-07 +
-            th * 1.3651202389758572e-10))) + \
-            s * (1.7632126669040377e-03 -
-            th * (8.8066583251206474e-06 +
-            th2 * 1.8832689434804897e-10) +
-            sqrts * (5.7463776745432097e-06 +
-            th2 * 1.4716275472242334e-09))
+    aden = (
+        1.0
+        + th
+        * (
+            7.2815210113327091e-03
+            + th
+            * (
+                -4.4787265461983921e-05
+                + th * (3.3851002965802430e-07 + th * 1.3651202389758572e-10)
+            )
+        )
+        + s
+        * (
+            1.7632126669040377e-03
+            - th * (8.8066583251206474e-06 + th2 * 1.8832689434804897e-10)
+            + sqrts * (5.7463776745432097e-06 + th2 * 1.4716275472242334e-09)
+        )
+    )
 
     # Add pressure dependence
     if p is not None and np.any(p > 0.0):
         pth = p * th
-        anum += p * (1.1798263740430364e-02 +
-                th2 * 9.8920219266399117e-08 +
-                s * 4.6996642771754730e-06 -
-                p * (2.5862187075154352e-08 +
-                th2 * 3.2921414007960662e-12))
-        aden += p * (6.7103246285651894e-06 -
-                pth * (th2 * 2.4461698007024582e-17 +
-                p * 9.1534417604289062e-18))
+        anum += p * (
+            1.1798263740430364e-02
+            + th2 * 9.8920219266399117e-08
+            + s * 4.6996642771754730e-06
+            - p * (2.5862187075154352e-08 + th2 * 3.2921414007960662e-12)
+        )
+        aden += p * (
+            6.7103246285651894e-06
+            - pth * (th2 * 2.4461698007024582e-17 + p * 9.1534417604289062e-18)
+        )
 
-    dens = anum/aden
+    dens = anum / aden
 
     return dens
 
@@ -719,13 +779,14 @@ def cond2salt(cond):
     # (salinity equals 35) at 25 Celsius (53.087 millisiemens per centimetre).
     R = cond / (53.087 * 1000)  # convert from milli to micro
 
-    salt = \
-            k1 + \
-            (k2 * np.power(R, 1/2.0)) + \
-            (k3 * R) + \
-            (k4 * np.power(R, 3/2.0)) + \
-            (k5 * np.power(R, 2)) + \
-            (k6 * np.power(R, 5/2.0))
+    salt = (
+        k1
+        + (k2 * np.power(R, 1 / 2.0))
+        + (k3 * R)
+        + (k4 * np.power(R, 3 / 2.0))
+        + (k5 * np.power(R, 2))
+        + (k6 * np.power(R, 5 / 2.0))
+    )
 
     return salt
 
@@ -835,16 +896,16 @@ def simpsonhunter(u, v, depth, levels, sampling=False):
         nd = uv.shape[0] / sampling
         uvmax = np.empty((nd, uv.shape[-1]))
         for i in range(nd):
-            uvmax[i, :] = uv[i * sampling:(i + 1) * sampling, :].max(axis=0)
+            uvmax[i, :] = uv[i * sampling : (i + 1) * sampling, :].max(axis=0)
     else:
         uvmax = uv
 
-    del(uv)
+    del uv
 
     # Take the average of the maxima for the parameter calculation.
     uvbar = uvmax.mean(axis=0)
 
-    SH = np.log10(depth / np.sqrt((uvbar**3)**2))
+    SH = np.log10(depth / np.sqrt((uvbar**3) ** 2))
 
     return SH
 
@@ -889,8 +950,10 @@ def mixedlayerdepth(rho, depth, thresh=0.03):
         rhosurface = rho[0]
         axis = 0
     else:
-        raise ValueError('Unsupported array shape for the density data. Provide density as [time, depth, position], '
-                         '[depth, position] or [depth].')
+        raise ValueError(
+            "Unsupported array shape for the density data. Provide density as [time, depth, position], "
+            "[depth, position] or [depth]."
+        )
 
     mld = np.max(np.ma.masked_where(rho < (rhosurface + thresh), depth), axis=axis)
 
@@ -933,14 +996,14 @@ def stokes(h, U, omega, z0, delta=False, U_star=False):
         Souza, A. J. "On the Use of the Stokes Number to Explain Frictional Tidal
         Dynamics and Water Column Structure in Shelf Seas." Ocean Science 9, no.
         2 (April 2, 2013): 391-98. doi:10.5194/os-9-391-2013.
-        
+
         Lamb, H. "Hydrodynamics", 6th Edn., Cambridge University Press, New York,
         USA, p. 622, 1932.
     """
 
     c1 = 0.25  # after Lamb (1932)
 
-    Cd = (0.4 / (1 + np.log(z0 / h)))**2
+    Cd = (0.4 / (1 + np.log(z0 / h))) ** 2
     u_s = np.sqrt(Cd * U**2)
     d = (c1 * u_s) / omega
     S = d / h
@@ -973,13 +1036,13 @@ def dissipation(rho, U, Cd=2.5e-3):
         Souza, A. J. "On the Use of the Stokes Number to Explain Frictional Tidal
         Dynamics and Water Column Structure in Shelf Seas." Ocean Science 9, no.
         2 (April 2, 2013): 391-98. doi:10.5194/os-9-391-2013.
-        
+
         Pingree, R. D., and D. K. Griffiths. "Tidal Fronts on the Shelf Seas around
         the British Isles." Journal of Geophysical Research: Oceans 83, no. C9
         (1978): 4615-22. doi:10.1029/JC083iC09p04615.
     """
 
-    D = rho * Cd * np.abs(U)**3
+    D = rho * Cd * np.abs(U) ** 3
 
     return D
 
@@ -1004,9 +1067,10 @@ def rhum(dew, temperature):
     m = 7.59138
     Tn = 240.7263
 
-    rhum = 100 * 10**(m * ((dew / (dew + Tn)) - (temperature / (temperature + Tn))))
+    rhum = 100 * 10 ** (m * ((dew / (dew + Tn)) - (temperature / (temperature + Tn))))
 
     return rhum
+
 
 # TODO Port these to PyFVCOM2
 # ---------------------------
@@ -1014,12 +1078,12 @@ def rhum(dew, temperature):
 # def cfl(fvcom, timestep, depth_averaged=False, verbose=False, **kwargs):
 #     """
 #     Calculate the time-varying CFL for a given grid from the velocity and surface elevation time series.
-# 
+#
 #     This is a python reimplementation of show_max_CFL written by Simon Waldman from the MATLAB fvcom-toolbox:
 #         https://gitlab.ecosystem-modelling.pml.ac.uk/fvcom/fvcom-toolbox/blob/dev/fvcom_postproc/show_max_CFL.m
-# 
+#
 #     This differs from that function in that it return the time-varying CFL array rather than just the maximum in time.
-# 
+#
 #     Parameters
 #     ----------
 #     fvcom : PyFVCOM.read.FileReader
@@ -1032,20 +1096,20 @@ def rhum(dew, temperature):
 #     verbose : bool, optional
 #         Print the location (sigma layer, element) of the maximum CFL value for the given time step. Defaults to not
 #         printing anything.
-# 
+#
 #     Additional kwargs are passed to `PyFVCOM.read.FileReader.load_data()'.
-# 
+#
 #     Returns
 #     -------
 #     cfl : np.ndarray
 #         An array of the time-varying CFL number.
-# 
+#
 #     """
-# 
+#
 #     from PyFVCOM.grid import element_side_lengths, nodes2elems, unstructured_grid_depths
-# 
+#
 #     g = 9.81  # acceleration due to gravity
-# 
+#
 #     # Load the relevant data if we don't already have it.
 #     uname, vname = 'u', 'v'
 #     if depth_averaged:
@@ -1056,23 +1120,23 @@ def rhum(dew, temperature):
 #         fvcom.load_data(vname, **kwargs)
 #     if not hasattr(fvcom.data, 'zeta'):
 #         fvcom.load_data('zeta', **kwargs)
-# 
+#
 #     u = getattr(fvcom.data, uname)
 #     v = getattr(fvcom.data, vname)
 #     z = getattr(fvcom.data, 'zeta')
-#     
+#
 #     spd = np.sqrt(u**2 + v**2)
-# 
+#
 #     element_sizes = element_side_lengths(fvcom.grid.triangles, fvcom.grid.x, fvcom.grid.y)
 #     minimum_element_size = np.min(element_sizes, axis=1)
-# 
+#
 #     if depth_averaged:
 #         element_water_depth = fvcom.grid.h_center + nodes2elems(z, fvcom.grid.triangles)
 #     else:
 #         node_water_depths = unstructured_grid_depths(fvcom.grid.h, z, fvcom.grid.siglay)
 #         # Make water depths positive down so we don't get NaNs in the square root.
 #         element_water_depth = nodes2elems(-node_water_depths, fvcom.grid.triangles)
-# 
+#
 #     # This is based on equation 6.1 on pg 33 of the MIKE hydrodynamic module manual (modified for using a single
 #     # characteristic length rather than deltaX/deltaY)
 #     cfl = (2 * np.sqrt(g * element_water_depth) + np.abs(u) + np.abs(v)) * (timestep / minimum_element_size)
@@ -1081,7 +1145,7 @@ def rhum(dew, temperature):
 #     if verbose:
 #         val = np.nanmax(cfl)
 #         ind = np.unravel_index(np.nanargmax(cfl), cfl.shape)
-# 
+#
 #         if depth_averaged:
 #             time_ind, element_ind = ind
 #             message = 'Maximum CFL first reached with an external timestep of {:f} seconds is approximately {:.3f} ' \
@@ -1096,96 +1160,96 @@ def rhum(dew, temperature):
 #             print(message.format(timestep, val, element_ind,
 #                                  fvcom.grid.lonc[element_ind], fvcom.grid.latc[element_ind],
 #                                  layer_ind, fvcom.time.datetime[time_ind].strftime('%Y-%m-%d %H:%M:%S')))
-# 
+#
 #     return cfl, cfl_2, cfl_3
-# 
+#
 # def cfl_external(fvcom, use_zeta=False):
 #     """
-#     Calculate the static CFL for a given grid, this is the cfl criterion for the external mode as given in the FVCOM 
+#     Calculate the static CFL for a given grid, this is the cfl criterion for the external mode as given in the FVCOM
 #     2013 manual pg 210. Since it is dependent on the water depth there is an option to use zeta in this calculation or
 #     not.
-#     
+#
 #     Parameters
 #     ----------
 #     fvcom : PyFVCOM.read.FileReader
 #         A file reader object loaded from a netCDF file.
-# 
+#
 #     Returns
 #     -------
 #     cfl_external : np.ndarray
 #         An array of the static CFL number.
-# 
+#
 #     """
 #     from PyFVCOM.grid import element_side_lengths, nodes2elems
-# 
+#
 #     g = 9.81  # acceleration due to gravity
-#     
+#
 #     # Shortest length of side
 #     element_sizes = element_side_lengths(fvcom.grid.triangles, fvcom.grid.x, fvcom.grid.y)
 #     minimum_element_size = np.min(element_sizes, axis=1)
-# 
-#     
+#
+#
 #     # Depth
-# 
-#     if use_zeta: 
+#
+#     if use_zeta:
 #         if not hasattr(fvcom.data, 'zeta'):
 #             fvcom.load_data('zeta', **kwargs)
 #         depth = fvcom.grid.h_center + nodes2elems(fvcom.data.zeta, fvcom.grid.triangles)
 #         minimum_element_size = minimum_element_size[np.newaxis, :]
 #     else:
 #         depth = fvcom.grid.h_center
-# 
+#
 #     cfl_external = minimum_element_size/np.sqrt(g*depth)
-# 
+#
 #     return cfl_external
-# 
-# 
+#
+#
 # def turbulent_kinetic_energy(u, v, w, debug=False):
 #     """
-# 
+#
 #     NOTE: THIS FUNCTION IS PROBABLY WRONG.
-# 
+#
 #     Calculate Turbulent Kinetic Energy from a velocity field.
-# 
+#
 #     Parameters
 #     ----------
 #     u, v, w : ndarray
 #         Velocity fields in the x, y and z directions. First dimension must be
 #         time. Any number of dimensions is supported.
-# 
+#
 #     Returns
 #     -------
 #     tke : ndarray
 #         Turbulent Kinetic Energy.
-# 
+#
 #     Notes
 #     -----
 #     Translated and cleaned up a bit from the MATLAB function at
 #     http://vegetationeffects.weebly.com/matlab-codes.html.
-# 
+#
 #     """
-# 
+#
 #     # TKE values from velocity measurements
 #     # 3/1/2012 retrieved from Nathan Wells, UW Madison Graduate Student
-# 
+#
 #     # Get time averaged means.
 #     u_bar = np.mean(u, axis=0)
 #     v_bar = np.mean(v, axis=0)
 #     w_bar = np.mean(w, axis=0)
-# 
+#
 #     # Fluctuation of velocity in x, y and z.
 #     u_prime = u - u_bar
 #     v_prime = v - v_bar
 #     w_prime = w - w_bar
-# 
+#
 #     u_prime_squared_ave = np.mean(u_prime**2, axis=0)
 #     v_prime_squared_ave = np.mean(v_prime**2, axis=0)
 #     w_prime_squared_ave = np.mean(w_prime**2, axis=0)
-# 
+#
 #     tke = 0.5 * (u_prime_squared_ave + v_prime_squared_ave + w_prime_squared_ave)
-# 
+#
 #     if debug:
 #         return tke, u_prime_squared_ave, v_prime_squared_ave, w_prime_squared_ave
 #     else:
 #         return tke
-# 
+#
