@@ -101,8 +101,7 @@ from .ocean import (
     pressure2depth, depth2pressure, dT_adiab_sw, theta_sw, cp_sw,
     sw_smow, sw_dens0, sw_seck, sw_dens, sw_svan, sw_sal78,
     sw_sal80, sw_salinity, dens_jackett, pea, simpsonhunter,
-    mixedlayerdepth, stokes, dissipation, rhum, cfl,
-    turbulent_kinetic_energy,
+    mixedlayerdepth, stokes, dissipation, rhum
 )
 
 # Import grid functions
@@ -191,8 +190,7 @@ __all__ = [
     "pressure2depth", "depth2pressure", "dT_adiab_sw", "theta_sw", "cp_sw",
     "sw_smow", "sw_dens0", "sw_seck", "sw_dens", "sw_svan", "sw_sal78",
     "sw_sal80", "sw_salinity", "dens_jackett", "pea", "simpsonhunter",
-    "mixedlayerdepth", "stokes", "dissipation", "rhum", "cfl",
-    "turbulent_kinetic_energy",
+    "mixedlayerdepth", "stokes", "dissipation", "rhum"
     # Tide harmonics
     "FVCOMHarmonicsNames", "TPXOHarmonicsNames", "TPXOComplexHarmonicsNames",
     "HarmonicsData", "HarmonicsReader", "FVCOMHarmonicsReader",
