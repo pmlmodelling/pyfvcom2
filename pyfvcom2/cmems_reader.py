@@ -6,6 +6,8 @@ from datetime import datetime
 import numpy as np
 import xarray as xr
 from scipy import interpolate
+from scipy.spatial import Delaunay
+from scipy.interpolate import LinearNDInterpolator
 from typing import Optional, Union, List
 from collections import namedtuple
 from pyfvcom2.exceptions import PyFVCOM2ValueError
@@ -118,6 +120,9 @@ class CMEMSReader:
 
         # Store variable for bottom indices. Only compute this if it is needed.
         self._bottom_indices = None
+        
+        # Cache triangulation for surface interpolation optimization
+        self._surface_triangulation = None
         
     def _build_time_index_mapping(self):
         """Build a mapping from datetime to (file_path, local_time_index)"""
@@ -487,13 +492,16 @@ class CMEMSReader:
         surface = var_data[0, :, :]
         surface_valid = surface[~self.mask_2D]
 
-        # Assume data is unstructured and interpolate using griddata
-        var_data_filled[0, :, :] = interpolate.griddata(
-            (self._unmasked_lons, self._unmasked_lats),
-            surface_valid,
-            (self._lon_grid, self._lat_grid),
-            method="linear",
-        )
+        # Build triangulation on first call and cache it for reuse
+        if self._surface_triangulation is None:
+            source_points = np.column_stack((self._unmasked_lons, self._unmasked_lats))
+            self._surface_triangulation = Delaunay(source_points)
+        
+        # Use cached triangulation for optimized interpolation
+        target_points = np.column_stack((self._lon_grid.ravel(), self._lat_grid.ravel()))
+        interpolator = LinearNDInterpolator(self._surface_triangulation, surface_valid)
+        interpolated_surface = interpolator(target_points).reshape(self._lon_grid.shape)
+        var_data_filled[0, :, :] = interpolated_surface
 
         # Copy in unmasked values for other depth levels
         var_data_filled[1:, :, :][~self.mask_3D[1:, :, :]] = var_data[1:, :, :][

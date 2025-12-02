@@ -3,6 +3,8 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from scipy import interpolate
+from scipy.spatial import Delaunay
+from scipy.interpolate import LinearNDInterpolator
 from typing import NamedTuple, Optional
 
 from .cmems_reader import CMEMSReader, default_fvcom_to_cmems_var_names
@@ -108,21 +110,29 @@ class CMEMSInterpolator(Interpolator):
         # Initialise array to hold interpolated data
         interpolated_data = np.empty((n_dates, n_points), dtype=np.float32)
 
+        # Build Delaunay triangulation once for reuse across all time steps
+        # This avoids the expensive triangulation rebuild in scipy.interpolate.griddata
+        source_points = np.column_stack((
+            self.cmems_reader.unmasked_lons, 
+            self.cmems_reader.unmasked_lats
+        ))
+        tri = Delaunay(source_points)
+        
+        # Target points for interpolation
+        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+
         # Loop over each time index to perform interpolation
         for d_idx, target_date in enumerate(dates):
             print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
 
-            # Get CMEMS unmasked lons/lats
+            # Get CMEMS unmasked data for this time step
             unmasked_data = self.cmems_reader.get_unmasked_variable(
                 cmems_var_name, target_date
             )
 
-            interpolated_data[d_idx, :] = interpolate.griddata(
-                (self.cmems_reader.unmasked_lons, self.cmems_reader.unmasked_lats),
-                unmasked_data,
-                (coordinates.lons, coordinates.lats),
-                method="linear",
-            )
+            # Create interpolator with pre-built triangulation (reuses triangulation)
+            interpolator = LinearNDInterpolator(tri, unmasked_data)
+            interpolated_data[d_idx, :] = interpolator(target_points)
         
         return interpolated_data
 
