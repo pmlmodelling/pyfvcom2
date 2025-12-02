@@ -2,6 +2,7 @@ import xarray as xr
 import numpy as np
 from typing import NamedTuple, Optional, List
 from abc import ABC, abstractmethod
+from netCDF4 import Dataset
 from .exceptions import PyFVCOM2ValueError
 
 __all__ = [
