@@ -7,6 +7,7 @@ from netCDF4 import Dataset
 
 import matplotlib
 from matplotlib import pyplot as plt
+from matplotlib import cm as mplcm
 from matplotlib.tri import Triangulation
 from matplotlib.collections import PolyCollection
 from matplotlib import quiver as mpl_quiver
