@@ -34,11 +34,6 @@ class CMEMSReader:
         else:
             self.file_paths = file_path
 
-        # Cache for currently loaded dataset and its file path
-        self._current_dataset = None
-        self._current_file_path = None
-        self._last_used_file_path = None  # For optimization
-        
         # Load only the first file initially for metadata and time-independent data
         print(f'Accessing CMEMS metadata from: {self.file_paths[0]}')
         self._metadata_dataset = xr.open_dataset(self.file_paths[0])
@@ -183,21 +178,10 @@ class CMEMSReader:
                     )
             
             required_file_path, local_time_index = self._time_to_file_map[closest_time]
-            
-        # Optimize: try last used file first
-        if (self._last_used_file_path == required_file_path and 
-            self._current_dataset is not None):
-            return self._current_dataset, local_time_index
-            
-        # Load new dataset if needed
-        if self._current_file_path != required_file_path:
-            if self._current_dataset is not None:
-                self._current_dataset.close()
-            self._current_dataset = xr.open_dataset(required_file_path)
-            self._current_file_path = required_file_path
-            
-        self._last_used_file_path = required_file_path
-        return self._current_dataset, local_time_index
+
+        dataset = xr.open_dataset(required_file_path)
+
+        return dataset, local_time_index
 
     def _set_masks(self):
         """Use reference variable to infer the mask"""
@@ -531,13 +515,6 @@ class CMEMSReader:
             self._metadata_dataset.close()
             self._metadata_dataset = None
             
-        if self._current_dataset is not None:
-            self._current_dataset.close()
-            self._current_dataset = None
-            
-        self._current_file_path = None
-        self._last_used_file_path = None
-        
     # Backward compatibility methods that convert time_index to datetime
     def get_var_by_index(self, var_name: str, time_index: int = 0, depth_index: int = None) -> np.ndarray:
         """Backward compatibility method using time index"""
