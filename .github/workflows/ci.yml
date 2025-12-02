@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.8', '3.9', '3.10', '3.11']
+        python-version: ['3.9', '3.10', '3.11']
 
     steps:
     - uses: actions/checkout@v4
@@ -55,10 +55,10 @@ jobs:
       run: |
         python -c "import pyfvcom2; print(f'PyFVCOM2 version: {pyfvcom2.__version__}')"
     
-#    - name: Run tests with pytest
-#      run: |
-#        # Run pytest with coverage, but don't fail if no tests found yet
-#        pytest tests/ --cov=pyfvcom2 --cov-report=xml --cov-report=term-missing || echo "No tests found yet"
+    - name: Run tests with pytest
+      run: |
+        # Run pytest with coverage, but don't fail if no tests found yet
+        pytest tests/ --cov=pyfvcom2 --cov-report=xml --cov-report=term-missing || echo "No tests found yet"
     
 #    - name: Upload coverage to Codecov
 #      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
