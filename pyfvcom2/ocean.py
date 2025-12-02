@@ -70,17 +70,14 @@ Pierre Cazenave (Plymouth Marine Laboratory)
 
 """
 
-from __future__ import division
-
 import numpy as np
-import matplotlib.pyplot as plt
+
 
 __all__ = [
     "pressure2depth", "depth2pressure", "dT_adiab_sw", "theta_sw", "cp_sw",
     "sw_smow", "sw_dens0", "sw_seck", "sw_dens", "sw_svan", "sw_sal78",
-    "sw_sal80", "sw_salinity", "dens_jackett", "pea", "simpsonhunter",
-    "mixedlayerdepth", "stokes", "dissipation", "rhum", "cfl",
-    "turbulent_kinetic_energy"
+    "sw_sal80", "sw_salinity", "dens_jackett", "cond2salt", "zbar", "pea", 
+    "simpsonhunter", "mixedlayerdepth", "stokes", "dissipation", "rhum"
 ]
 
 
@@ -89,132 +86,19 @@ c68 = 1.00024   # conversion constant to T68 temperature scale.
 c90 = 0.99976   # conversion constant to T90 temperature scale.
 
 
-def _tests():
-    """
-    Put some (sort of) unit tests in here to make sure the functions work as
-    expected.
-
-    """
-
-    test_lat = 30
-
-    test_z = np.logspace(0.1, 4, 50)  # log depth distribution
-    test_p = np.logspace(0.1, 4, 50)  # log pressure distribution
-
-    res_p1 = depth2pressure(test_z, test_lat)
-    res_z1 = pressure2depth(res_p1, test_lat)
-
-    res_z2 = pressure2depth(test_p, test_lat)
-    res_p2 = depth2pressure(res_z2, test_lat)
-
-    # Graph the differences
-    if False:
-        fig0 = plt.figure(figsize=(12, 10))
-        ax0 = fig0.add_subplot(1, 2, 1)
-        ax0.loglog(test_z, res_z1 - test_z, '.')
-        ax0.set_xlabel('Depth (m)')
-        ax0.set_ylabel('Difference (m)')
-        ax0.set_title('depth2pressure <-> pressure2depth')
-
-        ax1 = fig0.add_subplot(1, 2, 2)
-        ax1.loglog(test_p, res_p2 - test_p, '.')
-        ax1.set_xlabel('Pressure (dbar)')
-        ax1.set_ylabel('Difference (dbar)')
-        ax1.set_title('pressure2depth <-> depth2pressure ')
-
-        fig0.show()
-
-    # Input parameters
-    test_t = np.array(40)
-    test_s = np.array(40)
-    test_p = np.array(10000)
-    test_pr = np.array(0)
-    test_c = np.array(1.888091)
-    test_td = np.array(20)  # for dens_jackett
-    test_sd = np.array(20)  # for dens_jackett
-    test_pd = np.array(1000)  # for dens_jackett
-    test_cond = np.array([100, 65000])  # for cond2salt
-    test_h = np.array((10, 20, 30, 100))  # depths for stokes
-    test_U = 0.25  # U for stokes and dissipation
-    test_omega = 1 / 44714.1647021416  # omega for stokes
-    test_z0 = np.array((0.0025))  # z0 for stokes
-    test_rho = 1025
-    test_temp = np.arange(-20, 50, 10)
-    test_dew = np.linspace(0, 20, len(test_temp))
-
-    # Use some of the Fofonoff and Millard (1983) checks.
-    res_svan = sw_svan(test_t, test_s, test_p)
-    print('Steric anomaly\nFofonoff and Millard (1983):\t9.8130210e-6\nsw_svan:\t\t\t{}\n'.format(res_svan))
-
-    res_z = pressure2depth(test_p, test_lat)
-    print('Pressure to depth\nFofonoff and Millard (1983):\t9712.653\npressure2depth:\t\t\t{}\n'.format(res_z))
-
-    # The return to depth is a bit inaccurate, not sure why.
-    res_pres = depth2pressure(res_z, test_lat)
-    print('Depth to pressure\nFofonoff and Millar (1983):\t9712.653\ndepth2pressure:\t\t\t{}\n'.format(res_pres))
-
-    res_cp = cp_sw(test_t, test_s, test_p)
-    print('Specific heat of seawater\nFofonoff and Millard (1983):\t3849.500\ncp_sw:\t\t\t\t{}\n'.format(res_cp))
-
-    res_atg = dT_adiab_sw(test_t, test_s, test_p)
-    print('Adiabatic temperature gradient\nFofonoff and Millard (1983):\t0.0003255976\ndT_adiab_sw:\t\t\t{}\n'.format(res_atg))
-
-    res_theta = theta_sw(test_t, test_s, test_p, test_pr)
-    print('Potential temperature\nFofonoff and Millard (1983):\t36.89073\ntheta_sw:\t\t\t{}\n'.format(res_theta))
-
-    # Haven't got the right input values for sal78 and sw_salinity, but the
-    # outputs match the MATLAB functions, so I'm assuming they're OK...
-    # res_salinity = sw_salinity(test_c, test_t, test_p)
-    # print('Salinity\nFofonoff and Millard (1983):\t40\nsw_salinity:\t\t\t{}\n'.format(res_salinity))
-
-    res_sal78 = sw_sal78(test_c, test_t, test_p)
-    print('Salinity\nFofonoff and Millard (1983):\t40\nsw_sal78:\t\t\t{}\n'.format(res_sal78))
-
-    # Haven't got the right input values for sal78 and sw_salinity, but the
-    # outputs match the MATLAB functions, so I'm assuming they're OK...
-    # test_c, test_t, test_p = np.array(1.888091), np.array(40), np.array(10000)
-    # res_sal80 = sw_sal80(test_c, test_t, test_p)
-    # print('Salinity\nFofonoff and Millard (1983):\t40\nsw_sal80:\t\t\t{}\n'.format(res_sal80))
-
-    res_dens = dens_jackett(test_td, test_sd, test_pd)
-    print('Jackett density\nJackett et al. (2005):\t1017.728868019642\ndens_jackett:\t\t{}\n'.format(res_dens))
-
-    res_salt = cond2salt(test_cond)
-    print('Conductivity to salinity\nUSGS:\t\t0.046,\t\t\t44.016\ncond2salt:\t{},\t{}'.format(res_salt[0], res_salt[1]))
-
-    res_stokes, res_u_star, res_delta = stokes(test_h, test_U, test_omega, test_z0, U_star=True, delta=True)
-    print('Stokes number\nSouza (2013):\tS:\tTEST\tstokes:\tS:{}\n\t\t\tSouza (2013):\tU*:\tTEST\t{}\n\t\t\tSouza (2013):\tdelta:\tTEST\t{}\n'.format(res_stokes, res_u_star, res_delta))
-
-    res_dissipation = dissipation(test_rho, test_U)
-    print('Tidal dissipation\nKnown good:\t0.0400390625\ndissipation():\t{}'.format(res_dissipation))
-
-    valid_rhum = np.array((487.36529085, 270.83391406, 160.16590946, 100.0, 65.47545095, 44.70251971, 31.67003471))
-    calculated_rhum = rhum(test_dew, test_temp)
-    for hum in zip(calculated_rhum, valid_rhum):
-        print('Relative humidity:\tvalid: {:.3f}\trhum: {:.3f}\t(difference = {:.3f})'.format(hum[1], hum[0], np.diff(hum)[0]))
-
-
 def pressure2depth(p, lat):
-    """
-    Convert from pressure in decibars to depth in metres.
+    """Convert from pressure in decibars to depth in metres.
 
-    Parameters
-    ----------
-    p : ndarray
-        Pressure (1D array) in decibars.
-    lat : ndarray
-        Latitudes for samples in p.
+    Args:
+        p (ndarray): Pressure (1D array) in decibars.
+        lat (ndarray): Latitudes for samples in p.
 
-    Returns
-    -------
-    z : ndarray
-        Water depth in metres.
+    Returns:
+        ndarray: Water depth in metres.
 
-    Notes
-    -----
-    This implements the UNESCO Technical Papers in Marine Science No. 44 (available from
-    http://unesdoc.unesco.org/images/0005/000598/059832eb.pdf).
-
+    Notes:
+        This implements the UNESCO Technical Papers in Marine Science No. 44 (available from
+        http://unesdoc.unesco.org/images/0005/000598/059832eb.pdf).
     """
 
     x = np.sin(lat / 57.29578)**2
@@ -226,22 +110,15 @@ def pressure2depth(p, lat):
 
 
 def depth2pressure(z, lat):
-    """
-    Convert from depth in metres to pressure in decibars.
+    """Convert from depth in metres to pressure in decibars.
 
-    Parameters
-    ----------
-    z : ndarray
-        Depth (1D array) in metres. Must be positive down (negative values are
-        set to zero before conversion to pressure).
-    lat : ndarray
-        Latitudes for samples in z.
+    Args:
+        z (ndarray): Depth (1D array) in metres. Must be positive down (negative values are
+            set to zero before conversion to pressure).
+        lat (ndarray): Latitudes for samples in z.
 
-    Returns
-    -------
-    p : ndarray
-        Pressure in decibars.
-
+    Returns:
+        ndarray: Pressure in decibars.
     """
 
     # Set negative depths to 0. We assume positive depth values (as in the
@@ -260,25 +137,15 @@ def depth2pressure(z, lat):
 
 
 def dT_adiab_sw(t, s, p):
-    """
-    Calculate adiabatic temperature gradient (degrees Celsius dbar^{-1})
+    """Calculate adiabatic temperature gradient (degrees Celsius dbar^{-1}).
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (Celsius)
-    s : ndarray
-        Salinity (PSU)
-    p : ndarray
-        Pressure (decibars)
+    Args:
+        t (ndarray): Temperature (Celsius). All three arrays must have the same shape.
+        s (ndarray): Salinity (PSU). All three arrays must have the same shape.
+        p (ndarray): Pressure (decibars). All three arrays must have the same shape.
 
-    All three arrays must have the same shape.
-
-    Returns
-    -------
-    atg : ndarray
-        Adiabatic temperature gradient
-
+    Returns:
+        ndarray: Adiabatic temperature gradient.
     """
 
     # Constants
@@ -312,27 +179,17 @@ def dT_adiab_sw(t, s, p):
 
 
 def theta_sw(t, s, p, pr):
-    """
-    Calculate potential temperature for seawater from temperature, salinity and
-    pressure.
+    """Calculate potential temperature for seawater from temperature, salinity and pressure.
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
-    s : ndarray
-        Salinity (1D array) in practical salinity units (unitless). Must be the
-        same shape as t.
-    p : ndarray
-        Pressure (1D array) in decibars. Must be the same shape as t.
-    pr : ndarray
-        Reference pressure (decibars) either a scalar or the same shape as t.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
+        s (ndarray): Salinity (1D array) in practical salinity units (unitless). Must be the
+            same shape as t.
+        p (ndarray): Pressure (1D array) in decibars. Must be the same shape as t.
+        pr (ndarray): Reference pressure (decibars) either a scalar or the same shape as t.
 
-    Returns
-    -------
-    th : ndarray
-        Potential temperature (Celsius)
-
+    Returns:
+        ndarray: Potential temperature (Celsius).
     """
 
     dP = pr - p  # pressure difference.
@@ -360,30 +217,23 @@ def theta_sw(t, s, p, pr):
 
 
 def cp_sw(t, s, p):
-    """
+    """Calculate constant pressure specific heat (cp) for seawater.
+
     Calculate constant pressure specific heat (cp) for seawater, from
     temperature, salinity and pressure.
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
-    s : ndarray
-        Salinity (1D array) in practical salinity units (unitless). Must be the
-        same shape as t.
-    p : ndarray
-        Pressure (1D array) in decibars. Must be the same shape as t.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
+        s (ndarray): Salinity (1D array) in practical salinity units (unitless). Must be the
+            same shape as t.
+        p (ndarray): Pressure (1D array) in decibars. Must be the same shape as t.
 
-    Returns
-    -------
-    cp : ndarray
-        Constant pressure specific heat (Celsius).
+    Returns:
+        ndarray: Constant pressure specific heat (Celsius).
 
-    Notes
-    -----
-    Valid temperature range is -2 to 40C and salinity is 0-42 PSU. Warnings are
-    issued if the data fall outside these ranges.
-
+    Notes:
+        Valid temperature range is -2 to 40C and salinity is 0-42 PSU. Warnings are
+        issued if the data fall outside these ranges.
     """
 
     # Check for values outside the valid ranges.
@@ -494,19 +344,13 @@ def cp_sw(t, s, p):
 
 
 def sw_smow(t):
-    """
-    Calculate the density of Standard Mean Ocean Water (pure water).
+    """Calculate the density of Standard Mean Ocean Water (pure water).
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
 
-    Returns
-    -------
-    rho : ndarray
-        Density in kg m^{-3}.
-
+    Returns:
+        ndarray: Density in kg m^{-3}.
     """
 
     # Coefficients
@@ -526,21 +370,14 @@ def sw_smow(t):
 
 
 def sw_dens0(t, s):
-    """
-    Calculate sea water density at atmospheric surface pressure.
+    """Calculate sea water density at atmospheric surface pressure.
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
-    s: ndarray
-        Salinity (PSU). Must be the same size as t.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
+        s (ndarray): Salinity (PSU). Must be the same size as t.
 
-    Returns
-    -------
-    dens : ndarray
-        Seawater density at atmospheric surface pressure (kg m^{-1}).
-
+    Returns:
+        ndarray: Seawater density at atmospheric surface pressure (kg m^{-1}).
     """
 
     b0 = 8.24493e-1
@@ -566,24 +403,16 @@ def sw_dens0(t, s):
 
 
 def sw_seck(t, s, p):
-    """
-    Calculate Secant Bulk Modulus (K) of seawater.
+    """Calculate Secant Bulk Modulus (K) of seawater.
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
-    s : ndarray
-        Salinity (1D array) in practical salinity units (unitless). Must be the
-        same shape as t.
-    p : ndarray
-        Pressure (1D array) in decibars. Must be the same shape as t.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
+        s (ndarray): Salinity (1D array) in practical salinity units (unitless). Must be the
+            same shape as t.
+        p (ndarray): Pressure (1D array) in decibars. Must be the same shape as t.
 
-    Returns
-    -------
-    k : ndarray
-        Secant Bulk Modulus of seawater.
-
+    Returns:
+        ndarray: Secant Bulk Modulus of seawater.
     """
 
     # Compression terms
@@ -649,30 +478,21 @@ def sw_seck(t, s, p):
 
 
 def sw_dens(t, s, p):
-    """
-    Convert temperature, salinity and pressure to density.
+    """Convert temperature, salinity and pressure to density.
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
-    s : ndarray
-        Salinity (1D array) in practical salinity units (unitless). Must be the
-        same shape as t.
-    p : ndarray
-        Pressure (1D array) in decibars. Must be the same shape as t.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
+        s (ndarray): Salinity (1D array) in practical salinity units (unitless). Must be the
+            same shape as t.
+        p (ndarray): Pressure (1D array) in decibars. Must be the same shape as t.
 
-    Returns
-    -------
-    rho : ndarray
-        Density in kg m^{-3}.
+    Returns:
+        ndarray: Density in kg m^{-3}.
 
-    Notes
-    -----
-    Valid temperature range is -2 to 40C, salinity is 0-42 and pressure is
-    0-10000 decibars. Warnings are issued if the data fall outside these
-    ranges.
-
+    Notes:
+        Valid temperature range is -2 to 40C, salinity is 0-42 and pressure is
+        0-10000 decibars. Warnings are issued if the data fall outside these
+        ranges.
     """
 
     # Check for values outside the valid ranges.
@@ -709,24 +529,16 @@ def sw_dens(t, s, p):
 
 
 def sw_svan(t, s, p):
-    """
-    Calculate the specific volume (steric) anomaly.
+    """Calculate the specific volume (steric) anomaly.
 
-    Parameters
-    ----------
-    t : ndarray
-        Temperature (1D array) in degrees Celsius.
-    s : ndarray
-        Salinity (1D array) in practical salinity units (unitless). Must be the
-        same shape as t.
-    p : ndarray
-        Pressure (1D array) in decibars. Must be the same shape as t.
+    Args:
+        t (ndarray): Temperature (1D array) in degrees Celsius.
+        s (ndarray): Salinity (1D array) in practical salinity units (unitless). Must be the
+            same shape as t.
+        p (ndarray): Pressure (1D array) in decibars. Must be the same shape as t.
 
-    Returns
-    -------
-    svan : ndarray
-        Specific Volume Anomaly in kg m^{-3}.
-
+    Returns:
+        ndarray: Specific Volume Anomaly in kg m^{-3}.
     """
 
     rho = sw_dens(t, s, p)
@@ -737,32 +549,25 @@ def sw_svan(t, s, p):
 
 
 def sw_sal78(c, t, p):
-    """
-    Simplified version of the original SAL78 function from Fofonoff and Millard
-    (1983). This does only the conversion from conductivity, temperature and
+    """Simplified version of the original SAL78 function from Fofonoff and Millard (1983).
+
+    This does only the conversion from conductivity, temperature and
     pressure to salinity. Returns zero for conductivity values below 0.0005.
 
-    Parameters
-    ----------
-    c : ndarray
-        Conductivity (S m{-1})
-    t : ndarray
-        Temperature (degrees Celsius IPTS-68)
-    p : ndarray
-        Pressure (decibars)
+    Args:
+        c (ndarray): Conductivity (S m{-1}).
+        t (ndarray): Temperature (degrees Celsius IPTS-68).
+        p (ndarray): Pressure (decibars).
 
-    Returns
-    -------
-    s : salinity (PSU-78)
+    Returns:
+        ndarray: Salinity (PSU-78).
 
-    Notes
-    -----
-    The Conversion from IPTS-68 to ITS90 is:
-        T90 = 0.99976 * T68
-        T68 = 1.00024 * T90
+    Notes:
+        The Conversion from IPTS-68 to ITS90 is:
+            T90 = 0.99976 * T68
+            T68 = 1.00024 * T90
 
-    These constants are defined here as c90 (0.99976) and c68 (1.00024).
-
+        These constants are defined here as c90 (0.99976) and c68 (1.00024).
     """
 
     p = p / 10
@@ -794,55 +599,60 @@ def sw_sal78(c, t, p):
 
 
 def sw_sal80(args):
+    """Wrapper for sw_sal78 with compatible interface.
+
+    Args:
+        args (tuple): Tuple containing (conductivity, temperature, pressure) arguments.
+
+    Returns:
+        ndarray: Salinity (PSU-78).
+    """
     return sw_sal78(*args)
 
 
 def sw_salinity(args):
+    """Wrapper for sw_sal78 with compatible interface.
+
+    Args:
+        args (tuple): Tuple containing (conductivity, temperature, pressure) arguments.
+
+    Returns:
+        ndarray: Salinity (PSU-78).
+    """
     return sw_sal78(*args)
 
 
 def dens_jackett(th, s, p=None):
-    """
-    Computes the in-situ density according to the Jackett et al. (2005)
-    equation of state for sea water, which is based on the Gibbs potential
-    developed by Fiestel (2003).
+    """Compute the in-situ density according to the Jackett et al. (2005) equation of state.
 
-    The pressure dependence can be switched on (off by default) by giving an
-    absolute pressure value (> 0). s is salinity in PSU, th is potential
-    temperature in degrees Celsius, p is gauge pressure (absolute pressure
-    - 10.1325 dbar) and dens is the in-situ density in kg m^{-3}.
+    This equation of state for sea water is based on the Gibbs potential
+    developed by Fiestel (2003). The pressure dependence can be switched on (off by default) 
+    by giving an absolute pressure value (> 0).
 
-    The check value is dens_jackett(20, 20, 1000) = 1017.728868019642.
+    Args:
+        th (ndarray): Potential temperature (degrees Celsius).
+        s (ndarray): Salinity (PSU).
+        p (ndarray, optional): Gauge pressure (decibar) (absolute pressure - 10.1325 decibar).
 
-    Adopted from GOTM (www.gotm.net) (Original author(s): Hans Burchard
-    & Karsten Bolding) and the PMLPython script EqS.py.
+    Returns:
+        ndarray: In-situ density (kg m^{-3}).
 
-    Parameters
-    ----------
-    th : ndarray
-        Potential temperature (degrees Celsius)
-    s : ndarray
-        Salinity (PSU)
-    p : ndarray, optional
-        Gauge pressure (decibar) (absolute pressure - 10.1325 decibar)
+    Notes:
+        The check value is dens_jackett(20, 20, 1000) = 1017.728868019642.
+        
+        Adopted from GOTM (www.gotm.net) (Original author(s): Hans Burchard
+        & Karsten Bolding) and the PMLPython script EqS.py.
 
-    Returns
-    -------
-    dens : ndarray
-        In-situ density (kg m^{-3})
+    References:
+        Feistel, R., A new extended Gibbs thermodynamic potential of seawater,
+        Prog. Oceanogr., 58, 43-115,
+        http://authors.elsevier.com/sd/article/S0079661103000880 corrigendum 61
+        (2004) 99, 2003.
 
-    References
-    ----------
-    Feistel, R., A new extended Gibbs thermodynamic potential of seawater,
-    Prog. Oceanogr., 58, 43-115,
-    http://authors.elsevier.com/sd/article/S0079661103000880 corrigendum 61
-    (2004) 99, 2003.
-
-    Jackett, D. R., T. J. McDougall, R. Feistel, D. G. Wright, and S. M.
-    Griffies, Updated algorithms for density, potential temperature,
-    conservative temperature and freezing temperature of seawater, Journal of
-    Atmospheric and Oceanic Technology, submitted, 2005.
-
+        Jackett, D. R., T. J. McDougall, R. Feistel, D. G. Wright, and S. M.
+        Griffies, Updated algorithms for density, potential temperature,
+        conservative temperature and freezing temperature of seawater, Journal of
+        Atmospheric and Oceanic Technology, submitted, 2005.
     """
 
     th2 = th * th
@@ -885,27 +695,21 @@ def dens_jackett(th, s, p=None):
 
 
 def cond2salt(cond):
-    """
-    Convert conductivity to salinity assuming constant temperature (25 Celsius)
-    and pressure.
+    """Convert conductivity to salinity assuming constant temperature and pressure.
 
-    Parameters
-    ----------
-    cond : ndarray
-        Conductivity in microsiemens per cm.
+    Assumes constant temperature (25 Celsius) and pressure.
 
-    Returns
-    -------
-    salt : ndarray
-        Salinity in PSU.
+    Args:
+        cond (ndarray): Conductivity in microsiemens per cm.
 
-    References
-    ----------
-    Schemel, L. E., 2001, Simplified conversions between specific conductance
-    and salinity units for use with data from monitoring stations, IEP
-    Newsletter, v. 14, no. 1, p. 17-18 [accessed July 27, 2004, at
-    http://www.iep.ca.gov/report/newsletter/2001winter/IEPNewsletterWinter2001.pdf]
+    Returns:
+        ndarray: Salinity in PSU.
 
+    References:
+        Schemel, L. E., 2001, Simplified conversions between specific conductance
+        and salinity units for use with data from monitoring stations, IEP
+        Newsletter, v. 14, no. 1, p. 17-18 [accessed July 27, 2004, at
+        http://www.iep.ca.gov/report/newsletter/2001winter/IEPNewsletterWinter2001.pdf]
     """
 
     # Some constants
@@ -927,22 +731,15 @@ def cond2salt(cond):
 
 
 def zbar(data, levels):
-    """
-    Depth-average values in data.
+    """Depth-average values in data.
 
-    Parameters
-    ----------
-    data : ndarray
-        Values to be depth-averaged. Shape is [t, z, x] where t is time, z is
-        vertical and x is space (unstructured).
-    levels : ndarray
-        Array of vertical layer thicknesses. Shape is [z, x] or [t, z, x].
+    Args:
+        data (ndarray): Values to be depth-averaged. Shape is [t, z, x] where t is time, z is
+            vertical and x is space (unstructured).
+        levels (ndarray): Array of vertical layer thicknesses. Shape is [z, x] or [t, z, x].
 
-    Returns
-    -------
-    databar : ndarray
-        Depth-averaged values in data.
-
+    Returns:
+        ndarray: Depth-averaged values in data.
     """
 
     data = np.transpose(data, [1, 0, 2])
@@ -956,34 +753,22 @@ def zbar(data, levels):
 
 
 def pea(temp, salinity, depth, levels):
-    """
-    Calculate potential energy anomaly (stratification index).
+    """Calculate potential energy anomaly (stratification index).
 
-    Parameters
-    ----------
-    temp : ndarray
-        Temperature data (depth-resolved).
-    salinity : ndarray
-        Salinity data (depth-resolved).
-    depth : ndarray
-        Water depth (positive down). Can be 1D (node) or 3D (time, siglay,
-        node).
-    levels : ndarray
-        Vertical levels (fractions of 0-1) (FVCOM = siglev).
+    Args:
+        temp (ndarray): Temperature data (depth-resolved).
+        salinity (ndarray): Salinity data (depth-resolved).
+        depth (ndarray): Water depth (positive down). Can be 1D (node) or 3D (time, siglay, node).
+        levels (ndarray): Vertical levels (fractions of 0-1) (FVCOM = siglev).
 
-    Returns
-    -------
-    PEA : ndarray
-        Potential energy anomaly (J/m^{3}).
+    Returns:
+        ndarray: Potential energy anomaly (J/m^{3}).
 
-    Notes
-    -----
-
-    As with the zbar code, this could do with cleaning up by transposing the
-    arrays so the depth dimension is always first. This would make calculations
-    which require an axis to always use the 0th one instead of either the 0th
-    or 1st.
-
+    Notes:
+        As with the zbar code, this could do with cleaning up by transposing the
+        arrays so the depth dimension is always first. This would make calculations
+        which require an axis to always use the 0th one instead of either the 0th
+        or 1st.
     """
 
     nd = np.ndim(depth)
@@ -1021,35 +806,26 @@ def pea(temp, salinity, depth, levels):
 
 
 def simpsonhunter(u, v, depth, levels, sampling=False):
-    """
-    Calculate the Simpson-Hunter parameter (h/u^{3}).
+    """Calculate the Simpson-Hunter parameter (h/u^{3}).
 
-    Parameters
-    ----------
-    u, v : ndarray
-        Depth-resolved current vectors.
-    depth : ndarray
-        Water depth (m, +ve down). Must be on the same grid as u and v.
-    levels : ndarray
-        Vertical levels (fractions of 0-1) (FVCOM = siglev).
-    sampling : int, optional
-        If given, calculate the current speed maximum over `sampling' indices.
+    Args:
+        u (ndarray): Depth-resolved current vector (u-component).
+        v (ndarray): Depth-resolved current vector (v-component).
+        depth (ndarray): Water depth (m, +ve down). Must be on the same grid as u and v.
+        levels (ndarray): Vertical levels (fractions of 0-1) (FVCOM = siglev).
+        sampling (int, optional): If given, calculate the current speed maximum over
+            `sampling` indices.
 
-    Returns
-    -------
-    SH : ndarray
-        Simpson-Hunter parameter (np.log10(m^{-2}s^{-3})).
+    Returns:
+        ndarray: Simpson-Hunter parameter (np.log10(m^{-2}s^{-3})).
 
-    References
-    ----------
-    - Simpson, JH, and JR Hunter. "Fronts in the Irish Sea." Nature 250 (1974):
-      404-6.
-    - Holt, Jason, and Lars Umlauf. "Modelling the Tidal Mixing Fronts and
-      Seasonal Stratification of the Northwest European Continental Shelf."
-      Continental Shelf Research 28, no. 7 (April 2008): 887-903.
-      doi:10.1016/j.csr.2008.01.012.
-
-
+    References:
+        - Simpson, JH, and JR Hunter. "Fronts in the Irish Sea." Nature 250 (1974):
+          404-6.
+        - Holt, Jason, and Lars Umlauf. "Modelling the Tidal Mixing Fronts and
+          Seasonal Stratification of the Northwest European Continental Shelf."
+          Continental Shelf Research 28, no. 7 (April 2008): 887-903.
+          doi:10.1016/j.csr.2008.01.012.
     """
 
     dz = np.abs(np.diff(levels, axis=0)) * depth
@@ -1074,40 +850,33 @@ def simpsonhunter(u, v, depth, levels, sampling=False):
 
 
 def mixedlayerdepth(rho, depth, thresh=0.03):
-    """
+    """Calculate the mixed layer depth based on a threshold in vertical density.
+
     Calculate the mixed layer depth based on a threshold in the vertical
     density distribution.
 
-    Parameters
-    ----------
-    rho : ndarray
-        Density in kg m^{3} [time, depth, position] or [depth, position] or [depth].
-    depth : ndarray
-        Water depth (m, -ve down) corresponding to the positions in rho whose space matches rho.
-    thresh : float, optional
-        Optionally specify a different threshold (use at your own risk!).
-        Defaults to 0.03kg m^{-3}.
+    Args:
+        rho (ndarray): Density in kg m^{3} [time, depth, position] or [depth, position] or [depth].
+        depth (ndarray): Water depth (m, -ve down) corresponding to the positions in rho whose space
+            matches rho.
+        thresh (float, optional): Density threshold (use at your own risk!). Defaults to 0.03kg m^{-3}.
 
-    Returns
-    -------
-    mld : ndarray
-        Depth at which the density exceeds the surface value plus the
-        threshold (m, -ve down).
+    Returns:
+        ndarray: Depth at which the density exceeds the surface value plus the
+            threshold (m, -ve down).
 
-    Notes
-    -----
-    The mixed layer depth is given as the layer depth where the density is
-    greater than the threshold. As such, there is no interpolation between
-    layer depths (for now).
+    Notes:
+        The mixed layer depth is given as the layer depth where the density is
+        greater than the threshold. As such, there is no interpolation between
+        layer depths (for now).
 
-    If you have coarse layers, you will resolve the mixed layer depth poorly.
-    You will also get odd patterns where the water depth happens to make the
-    vertical layer which is closest to the actual density threshold jump by
-    one, either up or down.
+        If you have coarse layers, you will resolve the mixed layer depth poorly.
+        You will also get odd patterns where the water depth happens to make the
+        vertical layer which is closest to the actual density threshold jump by
+        one, either up or down.
 
-    Really, I need to add a linear interpolation between the two closest
-    layers.
-
+        Really, I need to add a linear interpolation between the two closest
+        layers.
     """
 
     if np.ndim(rho) == 3:
@@ -1129,56 +898,44 @@ def mixedlayerdepth(rho, depth, thresh=0.03):
 
 
 def stokes(h, U, omega, z0, delta=False, U_star=False):
-    """
-    Calculate the Stokes number for a given data set.
+    """Calculate the Stokes number for a given data set.
 
-    Parameters
-    ----------
-    h : ndarray
-        Water depth (positive down) in metres.
-    U : float
-        Constituent of intetest's (e.g. M2) major axis in metres.
-    omega : float
-        Oscillatory frequency of the constituent of interest (e.g. M2) in
-        s^{-1}. For M2, omega is 1.4e-4.
-    z0 : float, ndarray
-        Roughness length in metres. Either a single value or an array the same
-        shape as the depth data.
-    delta : bool, optional
-        Return the oscillatory boundary layer thickness (delta).
-    U_star : bool, optional
-        Return the frictional velocity (U_star).
+    Args:
+        h (ndarray): Water depth (positive down) in metres.
+        U (float): Constituent of interest's (e.g. M2) major axis in metres.
+        omega (float): Oscillatory frequency of the constituent of interest (e.g. M2) in
+            s^{-1}. For M2, omega is 1.4e-4.
+        z0 (float or ndarray): Roughness length in metres. Either a single value or an array
+            the same shape as the depth data.
+        delta (bool, optional): Return the oscillatory boundary layer thickness (delta).
+        U_star (bool, optional): Return the frictional velocity (U_star).
 
-    Returns
-    -------
-    S : ndarray
-        Stokes number.
-    delta : ndarray, optional
-        Oscillatory boundary layer thickness (Lamb, 1932).
-    U_star : ndarray, optional
-        Frictional velocity (U_star = Cd^{1/2}U)
+    Returns:
+        ndarray or tuple: Stokes number. If delta or U_star are True, returns tuple with
+            additional values:
+            - S (ndarray): Stokes number.
+            - delta (ndarray, optional): Oscillatory boundary layer thickness (Lamb, 1932).
+            - U_star (ndarray, optional): Frictional velocity (U_star = Cd^{1/2}U).
 
-    Examples
-    --------
-    >>> h = 30
-    >>> z0 = 0.0025
-    >>> U = 0.25
-    >>> omega = 1 / 44714.1647021416
-    >>> S = stokes(h, U, omega, z0)
-    >>> S
-    0.70923635467504365
-    >>> S, U_star = stokes(h, U, omega, z0, U_star=True)
-    >>> U_star
-    0.011915170758540733
+    Examples:
+        >>> h = 30
+        >>> z0 = 0.0025
+        >>> U = 0.25
+        >>> omega = 1 / 44714.1647021416
+        >>> S = stokes(h, U, omega, z0)
+        >>> S
+        0.70923635467504365
+        >>> S, U_star = stokes(h, U, omega, z0, U_star=True)
+        >>> U_star
+        0.011915170758540733
 
-    References
-    ----------
-    Souza, A. J. "On the Use of the Stokes Number to Explain Frictional Tidal
-    Dynamics and Water Column Structure in Shelf Seas." Ocean Science 9, no.
-    2 (April 2, 2013): 391-98. doi:10.5194/os-9-391-2013.
-    Lamb, H. "Hydrodynamics", 6th Edn., Cambridge University Press, New York,
-    USA, p. 622, 1932.
-
+    References:
+        Souza, A. J. "On the Use of the Stokes Number to Explain Frictional Tidal
+        Dynamics and Water Column Structure in Shelf Seas." Ocean Science 9, no.
+        2 (April 2, 2013): 391-98. doi:10.5194/os-9-391-2013.
+        
+        Lamb, H. "Hydrodynamics", 6th Edn., Cambridge University Press, New York,
+        USA, p. 622, 1932.
     """
 
     c1 = 0.25  # after Lamb (1932)
@@ -1199,36 +956,27 @@ def stokes(h, U, omega, z0, delta=False, U_star=False):
 
 
 def dissipation(rho, U, Cd=2.5e-3):
-    """
-    Calculate tidal dissipation for a given tidal harmonic (or harmonics).
+    """Calculate tidal dissipation for a given tidal harmonic (or harmonics).
 
-    Parameters
-    ----------
-    rho : ndarray
-        Density (kg m^{-3}). See dens_jackett() for calculating density from
-        temperature and salinity. Must be depth-averaged or a single value.
-    U : ndarray
-        Tidal harmonic major axis. Extend the array into the second dimension
-        to include results from multiple constituents.
-    Cd : float, ndarray, optional
-        If provided, a value for the quadratic drag coefficient. Defaults to
-        2.5e-3m. Can be an array whose size matches the number of locations in
-        rho.
+    Args:
+        rho (ndarray): Density (kg m^{-3}). See dens_jackett() for calculating density from
+            temperature and salinity. Must be depth-averaged or a single value.
+        U (ndarray): Tidal harmonic major axis. Extend the array into the second dimension
+            to include results from multiple constituents.
+        Cd (float or ndarray, optional): Value for the quadratic drag coefficient. Defaults to
+            2.5e-3. Can be an array whose size matches the number of locations in rho.
 
-    Returns
-    -------
-    D : ndarray
-        Tidal dissipation. Units?
+    Returns:
+        ndarray: Tidal dissipation. Units?
 
-    References
-    ----------
-    Souza, A. J. "On the Use of the Stokes Number to Explain Frictional Tidal
-    Dynamics and Water Column Structure in Shelf Seas." Ocean Science 9, no.
-    2 (April 2, 2013): 391-98. doi:10.5194/os-9-391-2013.
-    Pingree, R. D., and D. K. Griffiths. "Tidal Fronts on the Shelf Seas around
-    the British Isles." Journal of Geophysical Research: Oceans 83, no. C9
-    (1978): 4615-22. doi:10.1029/JC083iC09p04615.
-
+    References:
+        Souza, A. J. "On the Use of the Stokes Number to Explain Frictional Tidal
+        Dynamics and Water Column Structure in Shelf Seas." Ocean Science 9, no.
+        2 (April 2, 2013): 391-98. doi:10.5194/os-9-391-2013.
+        
+        Pingree, R. D., and D. K. Griffiths. "Tidal Fronts on the Shelf Seas around
+        the British Isles." Journal of Geophysical Research: Oceans 83, no. C9
+        (1978): 4615-22. doi:10.1029/JC083iC09p04615.
     """
 
     D = rho * Cd * np.abs(U)**3
@@ -1237,28 +985,20 @@ def dissipation(rho, U, Cd=2.5e-3):
 
 
 def rhum(dew, temperature):
-    """
-    Calculate relative humidity from dew temperature and ambient temperature.
+    """Calculate relative humidity from dew temperature and ambient temperature.
 
     This uses the range of constants which yields results accurate in the range
     -20 to 50 Celsius.
 
-    Parameters
-    ----------
-    dew : ndarray
-        Dew point temperature (Celsius).
-    temperature : ndarray
-        Ambient temperature (Celsius).
+    Args:
+        dew (ndarray): Dew point temperature (Celsius).
+        temperature (ndarray): Ambient temperature (Celsius).
 
-    Returns
-    -------
-    rhum : ndarray
-        Relative humidity (%).
+    Returns:
+        ndarray: Relative humidity (%).
 
-    References
-    ----------
-    http://www.vaisala.com/Vaisala%20Documents/Application%20notes/Humidity_Conversion_Formulas_B210973EN-F.pdf
-
+    References:
+        http://www.vaisala.com/Vaisala%20Documents/Application%20notes/Humidity_Conversion_Formulas_B210973EN-F.pdf
     """
 
     m = 7.59138
@@ -1268,187 +1008,184 @@ def rhum(dew, temperature):
 
     return rhum
 
+# TODO Port these to PyFVCOM2
+# ---------------------------
 
-def cfl(fvcom, timestep, depth_averaged=False, verbose=False, **kwargs):
-    """
-    Calculate the time-varying CFL for a given grid from the velocity and surface elevation time series.
-
-    This is a python reimplementation of show_max_CFL written by Simon Waldman from the MATLAB fvcom-toolbox:
-        https://gitlab.ecosystem-modelling.pml.ac.uk/fvcom/fvcom-toolbox/blob/dev/fvcom_postproc/show_max_CFL.m
-
-    This differs from that function in that it return the time-varying CFL array rather than just the maximum in time.
-
-    Parameters
-    ----------
-    fvcom : PyFVCOM.read.FileReader
-        A file reader object loaded from a netCDF file. This may optionally include 'u', 'v' and 'zeta' data. If no
-        data are loaded, they will be at run time.
-    timestep : float
-        The external time step used in the model.
-    depth_averaged : bool, optional
-        Set to True to use depth-averaged data. Defaults to False (depth-resolved).
-    verbose : bool, optional
-        Print the location (sigma layer, element) of the maximum CFL value for the given time step. Defaults to not
-        printing anything.
-
-    Additional kwargs are passed to `PyFVCOM.read.FileReader.load_data()'.
-
-    Returns
-    -------
-    cfl : np.ndarray
-        An array of the time-varying CFL number.
-
-    """
-
-    from PyFVCOM.grid import element_side_lengths, nodes2elems, unstructured_grid_depths
-
-    g = 9.81  # acceleration due to gravity
-
-    # Load the relevant data if we don't already have it.
-    uname, vname = 'u', 'v'
-    if depth_averaged:
-        uname, vname = 'ua', 'va'
-    if not hasattr(fvcom.data, uname):
-        fvcom.load_data(uname, **kwargs)
-    if not hasattr(fvcom.data, vname):
-        fvcom.load_data(vname, **kwargs)
-    if not hasattr(fvcom.data, 'zeta'):
-        fvcom.load_data('zeta', **kwargs)
-
-    u = getattr(fvcom.data, uname)
-    v = getattr(fvcom.data, vname)
-    z = getattr(fvcom.data, 'zeta')
-    
-    spd = np.sqrt(u**2 + v**2)
-
-    element_sizes = element_side_lengths(fvcom.grid.triangles, fvcom.grid.x, fvcom.grid.y)
-    minimum_element_size = np.min(element_sizes, axis=1)
-
-    if depth_averaged:
-        element_water_depth = fvcom.grid.h_center + nodes2elems(z, fvcom.grid.triangles)
-    else:
-        node_water_depths = unstructured_grid_depths(fvcom.grid.h, z, fvcom.grid.siglay)
-        # Make water depths positive down so we don't get NaNs in the square root.
-        element_water_depth = nodes2elems(-node_water_depths, fvcom.grid.triangles)
-
-    # This is based on equation 6.1 on pg 33 of the MIKE hydrodynamic module manual (modified for using a single
-    # characteristic length rather than deltaX/deltaY)
-    cfl = (2 * np.sqrt(g * element_water_depth) + np.abs(u) + np.abs(v)) * (timestep / minimum_element_size)
-    cfl_2 = (2 * np.sqrt(g * element_water_depth) + spd) * (timestep / minimum_element_size)
-    cfl_3 = spd * (timestep / minimum_element_size)
-    if verbose:
-        val = np.nanmax(cfl)
-        ind = np.unravel_index(np.nanargmax(cfl), cfl.shape)
-
-        if depth_averaged:
-            time_ind, element_ind = ind
-            message = 'Maximum CFL first reached with an external timestep of {:f} seconds is approximately {:.3f} ' \
-                      'in element {:d} (lon/lat: {}, {}) at {}.'
-            print(message.format(timestep, val, element_ind,
-                                 fvcom.grid.lonc[element_ind], fvcom.grid.latc[element_ind],
-                                 fvcom.time.datetime[time_ind].strftime('%Y-%m-%d %H:%M:%S')))
-        else:
-            time_ind, layer_ind, element_ind = ind
-            message = 'Maximum CFL first reached with an external timestep of {:f} seconds is approximately {:.3f} ' \
-                      'in element {:d} (lon/lat: {}, {}) layer {:d} at {}.'
-            print(message.format(timestep, val, element_ind,
-                                 fvcom.grid.lonc[element_ind], fvcom.grid.latc[element_ind],
-                                 layer_ind, fvcom.time.datetime[time_ind].strftime('%Y-%m-%d %H:%M:%S')))
-
-    return cfl, cfl_2, cfl_3
-
-def cfl_external(fvcom, use_zeta=False):
-    """
-    Calculate the static CFL for a given grid, this is the cfl criterion for the external mode as given in the FVCOM 
-    2013 manual pg 210. Since it is dependent on the water depth there is an option to use zeta in this calculation or
-    not.
-    
-    Parameters
-    ----------
-    fvcom : PyFVCOM.read.FileReader
-        A file reader object loaded from a netCDF file.
-
-    Returns
-    -------
-    cfl_external : np.ndarray
-        An array of the static CFL number.
-
-    """
-    from PyFVCOM.grid import element_side_lengths, nodes2elems
-
-    g = 9.81  # acceleration due to gravity
-    
-    # Shortest length of side
-    element_sizes = element_side_lengths(fvcom.grid.triangles, fvcom.grid.x, fvcom.grid.y)
-    minimum_element_size = np.min(element_sizes, axis=1)
-
-    
-    # Depth
-
-    if use_zeta: 
-        if not hasattr(fvcom.data, 'zeta'):
-            fvcom.load_data('zeta', **kwargs)
-        depth = fvcom.grid.h_center + nodes2elems(fvcom.data.zeta, fvcom.grid.triangles)
-        minimum_element_size = minimum_element_size[np.newaxis, :]
-    else:
-        depth = fvcom.grid.h_center
-
-    cfl_external = minimum_element_size/np.sqrt(g*depth)
-
-    return cfl_external
-
-
-def turbulent_kinetic_energy(u, v, w, debug=False):
-    """
-
-    NOTE: THIS FUNCTION IS PROBABLY WRONG.
-
-    Calculate Turbulent Kinetic Energy from a velocity field.
-
-    Parameters
-    ----------
-    u, v, w : ndarray
-        Velocity fields in the x, y and z directions. First dimension must be
-        time. Any number of dimensions is supported.
-
-    Returns
-    -------
-    tke : ndarray
-        Turbulent Kinetic Energy.
-
-    Notes
-    -----
-    Translated and cleaned up a bit from the MATLAB function at
-    http://vegetationeffects.weebly.com/matlab-codes.html.
-
-    """
-
-    # TKE values from velocity measurements
-    # 3/1/2012 retrieved from Nathan Wells, UW Madison Graduate Student
-
-    # Get time averaged means.
-    u_bar = np.mean(u, axis=0)
-    v_bar = np.mean(v, axis=0)
-    w_bar = np.mean(w, axis=0)
-
-    # Fluctuation of velocity in x, y and z.
-    u_prime = u - u_bar
-    v_prime = v - v_bar
-    w_prime = w - w_bar
-
-    u_prime_squared_ave = np.mean(u_prime**2, axis=0)
-    v_prime_squared_ave = np.mean(v_prime**2, axis=0)
-    w_prime_squared_ave = np.mean(w_prime**2, axis=0)
-
-    tke = 0.5 * (u_prime_squared_ave + v_prime_squared_ave + w_prime_squared_ave)
-
-    if debug:
-        return tke, u_prime_squared_ave, v_prime_squared_ave, w_prime_squared_ave
-    else:
-        return tke
-
-
-if __name__ == '__main__':
-
-    # Run the tests to check things are working OK.
-    _tests()
+# def cfl(fvcom, timestep, depth_averaged=False, verbose=False, **kwargs):
+#     """
+#     Calculate the time-varying CFL for a given grid from the velocity and surface elevation time series.
+# 
+#     This is a python reimplementation of show_max_CFL written by Simon Waldman from the MATLAB fvcom-toolbox:
+#         https://gitlab.ecosystem-modelling.pml.ac.uk/fvcom/fvcom-toolbox/blob/dev/fvcom_postproc/show_max_CFL.m
+# 
+#     This differs from that function in that it return the time-varying CFL array rather than just the maximum in time.
+# 
+#     Parameters
+#     ----------
+#     fvcom : PyFVCOM.read.FileReader
+#         A file reader object loaded from a netCDF file. This may optionally include 'u', 'v' and 'zeta' data. If no
+#         data are loaded, they will be at run time.
+#     timestep : float
+#         The external time step used in the model.
+#     depth_averaged : bool, optional
+#         Set to True to use depth-averaged data. Defaults to False (depth-resolved).
+#     verbose : bool, optional
+#         Print the location (sigma layer, element) of the maximum CFL value for the given time step. Defaults to not
+#         printing anything.
+# 
+#     Additional kwargs are passed to `PyFVCOM.read.FileReader.load_data()'.
+# 
+#     Returns
+#     -------
+#     cfl : np.ndarray
+#         An array of the time-varying CFL number.
+# 
+#     """
+# 
+#     from PyFVCOM.grid import element_side_lengths, nodes2elems, unstructured_grid_depths
+# 
+#     g = 9.81  # acceleration due to gravity
+# 
+#     # Load the relevant data if we don't already have it.
+#     uname, vname = 'u', 'v'
+#     if depth_averaged:
+#         uname, vname = 'ua', 'va'
+#     if not hasattr(fvcom.data, uname):
+#         fvcom.load_data(uname, **kwargs)
+#     if not hasattr(fvcom.data, vname):
+#         fvcom.load_data(vname, **kwargs)
+#     if not hasattr(fvcom.data, 'zeta'):
+#         fvcom.load_data('zeta', **kwargs)
+# 
+#     u = getattr(fvcom.data, uname)
+#     v = getattr(fvcom.data, vname)
+#     z = getattr(fvcom.data, 'zeta')
+#     
+#     spd = np.sqrt(u**2 + v**2)
+# 
+#     element_sizes = element_side_lengths(fvcom.grid.triangles, fvcom.grid.x, fvcom.grid.y)
+#     minimum_element_size = np.min(element_sizes, axis=1)
+# 
+#     if depth_averaged:
+#         element_water_depth = fvcom.grid.h_center + nodes2elems(z, fvcom.grid.triangles)
+#     else:
+#         node_water_depths = unstructured_grid_depths(fvcom.grid.h, z, fvcom.grid.siglay)
+#         # Make water depths positive down so we don't get NaNs in the square root.
+#         element_water_depth = nodes2elems(-node_water_depths, fvcom.grid.triangles)
+# 
+#     # This is based on equation 6.1 on pg 33 of the MIKE hydrodynamic module manual (modified for using a single
+#     # characteristic length rather than deltaX/deltaY)
+#     cfl = (2 * np.sqrt(g * element_water_depth) + np.abs(u) + np.abs(v)) * (timestep / minimum_element_size)
+#     cfl_2 = (2 * np.sqrt(g * element_water_depth) + spd) * (timestep / minimum_element_size)
+#     cfl_3 = spd * (timestep / minimum_element_size)
+#     if verbose:
+#         val = np.nanmax(cfl)
+#         ind = np.unravel_index(np.nanargmax(cfl), cfl.shape)
+# 
+#         if depth_averaged:
+#             time_ind, element_ind = ind
+#             message = 'Maximum CFL first reached with an external timestep of {:f} seconds is approximately {:.3f} ' \
+#                       'in element {:d} (lon/lat: {}, {}) at {}.'
+#             print(message.format(timestep, val, element_ind,
+#                                  fvcom.grid.lonc[element_ind], fvcom.grid.latc[element_ind],
+#                                  fvcom.time.datetime[time_ind].strftime('%Y-%m-%d %H:%M:%S')))
+#         else:
+#             time_ind, layer_ind, element_ind = ind
+#             message = 'Maximum CFL first reached with an external timestep of {:f} seconds is approximately {:.3f} ' \
+#                       'in element {:d} (lon/lat: {}, {}) layer {:d} at {}.'
+#             print(message.format(timestep, val, element_ind,
+#                                  fvcom.grid.lonc[element_ind], fvcom.grid.latc[element_ind],
+#                                  layer_ind, fvcom.time.datetime[time_ind].strftime('%Y-%m-%d %H:%M:%S')))
+# 
+#     return cfl, cfl_2, cfl_3
+# 
+# def cfl_external(fvcom, use_zeta=False):
+#     """
+#     Calculate the static CFL for a given grid, this is the cfl criterion for the external mode as given in the FVCOM 
+#     2013 manual pg 210. Since it is dependent on the water depth there is an option to use zeta in this calculation or
+#     not.
+#     
+#     Parameters
+#     ----------
+#     fvcom : PyFVCOM.read.FileReader
+#         A file reader object loaded from a netCDF file.
+# 
+#     Returns
+#     -------
+#     cfl_external : np.ndarray
+#         An array of the static CFL number.
+# 
+#     """
+#     from PyFVCOM.grid import element_side_lengths, nodes2elems
+# 
+#     g = 9.81  # acceleration due to gravity
+#     
+#     # Shortest length of side
+#     element_sizes = element_side_lengths(fvcom.grid.triangles, fvcom.grid.x, fvcom.grid.y)
+#     minimum_element_size = np.min(element_sizes, axis=1)
+# 
+#     
+#     # Depth
+# 
+#     if use_zeta: 
+#         if not hasattr(fvcom.data, 'zeta'):
+#             fvcom.load_data('zeta', **kwargs)
+#         depth = fvcom.grid.h_center + nodes2elems(fvcom.data.zeta, fvcom.grid.triangles)
+#         minimum_element_size = minimum_element_size[np.newaxis, :]
+#     else:
+#         depth = fvcom.grid.h_center
+# 
+#     cfl_external = minimum_element_size/np.sqrt(g*depth)
+# 
+#     return cfl_external
+# 
+# 
+# def turbulent_kinetic_energy(u, v, w, debug=False):
+#     """
+# 
+#     NOTE: THIS FUNCTION IS PROBABLY WRONG.
+# 
+#     Calculate Turbulent Kinetic Energy from a velocity field.
+# 
+#     Parameters
+#     ----------
+#     u, v, w : ndarray
+#         Velocity fields in the x, y and z directions. First dimension must be
+#         time. Any number of dimensions is supported.
+# 
+#     Returns
+#     -------
+#     tke : ndarray
+#         Turbulent Kinetic Energy.
+# 
+#     Notes
+#     -----
+#     Translated and cleaned up a bit from the MATLAB function at
+#     http://vegetationeffects.weebly.com/matlab-codes.html.
+# 
+#     """
+# 
+#     # TKE values from velocity measurements
+#     # 3/1/2012 retrieved from Nathan Wells, UW Madison Graduate Student
+# 
+#     # Get time averaged means.
+#     u_bar = np.mean(u, axis=0)
+#     v_bar = np.mean(v, axis=0)
+#     w_bar = np.mean(w, axis=0)
+# 
+#     # Fluctuation of velocity in x, y and z.
+#     u_prime = u - u_bar
+#     v_prime = v - v_bar
+#     w_prime = w - w_bar
+# 
+#     u_prime_squared_ave = np.mean(u_prime**2, axis=0)
+#     v_prime_squared_ave = np.mean(v_prime**2, axis=0)
+#     w_prime_squared_ave = np.mean(w_prime**2, axis=0)
+# 
+#     tke = 0.5 * (u_prime_squared_ave + v_prime_squared_ave + w_prime_squared_ave)
+# 
+#     if debug:
+#         return tke, u_prime_squared_ave, v_prime_squared_ave, w_prime_squared_ave
+#     else:
+#         return tke
+# 
