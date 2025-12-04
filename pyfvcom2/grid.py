@@ -117,7 +117,8 @@ class Grid:
             self.x, self.y, self.epsg_code = utm_from_lonlat(self.lon, self.lat, epsg_code)
         else:
             raise PyFVCOM2ValueError(
-                "coordinate_system must be either 'cartesian' or 'geographic'"
+                "coordinate_system must be either 'cartesian' or 'geographic'. "\
+                f"Received '{coordinate_system}'."
             )
 
         # Element centre coordinates
