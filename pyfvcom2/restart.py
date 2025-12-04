@@ -1,7 +1,7 @@
 """Functions for handling FVCOM restart files"""
 
 import numpy as np
-from netCDF4 import Dataset
+from netCDF4 import Dataset, stringtochar
 from datetime import datetime
 import subprocess
 from typing import Optional
@@ -37,7 +37,7 @@ def write_restart(
 
     # Use ncks to copy over everything from the template file except the variables listed in the data dict
     ncks_command = (
-        f"ncks --no_crd -O -x -v {exclude_vars} {template_file_path} {output_path}"
+        f"ncks -h --no_crd -O -x -v {exclude_vars} {template_file_path} {output_path}"
     )
 
     # Capture the output and errors
@@ -68,9 +68,9 @@ def write_restart(
                 new_datetime - ref_datetime
             ).total_seconds() / 86400.0  # seconds in a day
             new_Itime = int(new_time)
-            new_times = new_datetime.strftime(
-                f'{new_datetime.strftime("%Y-%m-%d")}T00:00:00.000000'
-            )
+            new_times = [new_datetime.strftime(
+                "%Y-%m-%dT%H:%M:%S.%f"
+            )]
             times_vars = {"time": new_time, "Itime": new_Itime, "Times": new_times}
 
             # Create the three time variables if they do not already exist
@@ -91,9 +91,15 @@ def write_restart(
                     )
 
                 # Update the time variables in the output dataset
-                output_ds.variables[time_var_name][:] = np.asarray(
-                    value, dtype=template_ds.variables[time_var_name].datatype
-                )
+                if time_var_name == "Times":
+                    # Handle Times as a string/character variable
+                    # NetCDF4 expects strings to be encoded as bytes for character arrays
+                    output_ds.variables[time_var_name][:] = stringtochar(np.array(new_times, 'S26'))
+                else:
+                    # Handle numeric time variables (time, Itime)
+                    output_ds.variables[time_var_name][:] = np.asarray(
+                        value, dtype=template_ds.variables[time_var_name].datatype
+                    )
 
 
         # Now write the data variables
