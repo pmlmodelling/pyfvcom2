@@ -395,7 +395,7 @@ class NestManager:
 
         # Define the global attributes
         globals = {'type': 'FVCOM nestING TIME SERIES FILE',
-                   'title': f'FVCOM nestING TYPE {type} TIME SERIES data for open boundary',
+                   'title': f'FVCOM nestING TYPE {nest_type} TIME SERIES data for open boundary',
                    'history': f'File created using PyFVCOM2 version {full_version}',
                    'filename': str(ncfile),
                    'Conventions': 'CF-1.0'}
@@ -516,7 +516,7 @@ class NestManager:
             nest_ncfile.add_variable('h_center', self._grid_ref.hc[elements], 
                     ['nele'], attributes=atts, ncopts=ncopts)
 
-            if type == 3:
+            if nest_type == 3:
                 atts = {'long_name': 'Weights for nodes in relaxation zone',
                         'units': 'no units',
                         'grid': 'fvcom_grid',
