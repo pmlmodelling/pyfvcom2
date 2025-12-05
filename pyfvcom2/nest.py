@@ -23,7 +23,7 @@ class GridBand:
     """
     
     def __init__(self, nodes: np.ndarray, elements: np.ndarray, 
-                 element_weights: np.ndarray = None, node_weights: np.ndarray = None):
+                 node_weights: np.ndarray = None, element_weights: np.ndarray = None):
         """Initialize 3D GridBand.
         
         Args:
@@ -34,8 +34,8 @@ class GridBand:
         """
         self._nodes = nodes
         self._elements = elements
-        self._element_weights = element_weights
         self._node_weights = node_weights
+        self._element_weights = element_weights
 
     @property
     def nodes(self) -> np.ndarray:
@@ -172,11 +172,15 @@ class NestManager:
         for ob in self._grid_ref.open_boundaries:
             nest = Nest(open_boundary=ob)
 
-            # Set of nodes that are used to locate elements in the next grid band. When beginning
-            # to add grid bands, as were are here, we start with the open boundary nodes. As we successively
-            # add grid bands, we update this to be the nodes in the most recently added grid band.
-            reference_nodes = ob.node_indices
+            # Add new OB nodes to all nodes
+            new_nodes = np.setdiff1d(ob.node_indices, all_nodes).tolist()
+            all_nodes.extend(new_nodes)
             
+            # Set of nodes that are used to locate elements in the next grid band. When beginning
+            # to add grid bands, as we are here, we start with the open boundary nodes. As we successively
+            # add grid bands, we update this to be the nodes in the most recently added grid band.
+            reference_nodes = new_nodes
+
             for i in range(num_grid_bands):
                 # First, find the elements that make up the grid band adjoining the current, inner
                 # most set of nodes in the nest. If no grid bands have been added yet, this will
@@ -250,7 +254,7 @@ class NestManager:
                 all_nodes.extend(band.nodes)
 
         # Return unique nodes as a numpy array
-        return np.unique(np.array(all_nodes, dtype=np.int32))
+        return np.array(all_nodes, dtype=np.int32)
 
     def get_all_nest_elements(self) -> np.ndarray:
         """Get all unique element indices used in all nests.
@@ -265,7 +269,7 @@ class NestManager:
                 all_elements.extend(band.elements)
 
         # Return unique elements as a numpy array
-        return np.unique(np.array(all_elements, dtype=np.int32))
+        return np.array(all_elements, dtype=np.int32)
     
     def get_all_node_weights(self) -> np.ndarray:
         """Get all node weights for all nests.
@@ -380,7 +384,7 @@ class NestManager:
         if nest_type == 3:
             node_weights = self.get_all_node_weights()
             node_weights = np.tile(node_weights, [n_dates, 1])
-            
+
             element_weights = self.get_all_element_weights()
             element_weights = np.tile(element_weights, [n_dates, 1])
         else:
