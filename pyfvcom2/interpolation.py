@@ -133,6 +133,26 @@ class CMEMSInterpolator(Interpolator):
             # Create interpolator with pre-built triangulation (reuses triangulation)
             interpolator = LinearNDInterpolator(tri, unmasked_data)
             interpolated_data[d_idx, :] = interpolator(target_points)
+            
+            # Check for NaN values indicating out-of-bounds points
+            # TODO - Might there be situations when one wants to fill the NaNs
+            # using, e.g., nearest-neighbor interpolation? NB the method is already
+            # interpolating over masked internal points, so this would only apply
+            # for points that also sit outside the convex hull of the unstructured
+            # grid which has been constructed from the regular CMEMS grid. In most
+            # cases, I expect one would want to use a different source of data
+            # for these points.
+            nan_mask = np.isnan(interpolated_data[d_idx, :])
+            if np.any(nan_mask):
+                nan_indices = np.where(nan_mask)[0]
+                nan_coords = target_points[nan_indices]
+                error_msg = (f"Out-of-bounds interpolation detected for {len(nan_indices)} points "
+                           f"at time {target_date}.\n"
+                           f"Points outside CMEMS grid coverage: "
+                           f"{[(coord[0], coord[1]) for coord in nan_coords[:5]]}")
+                if len(nan_indices) > 5:
+                    error_msg += f" ... and {len(nan_indices) - 5} more points"
+                raise PyFVCOM2ValueError(error_msg)
         
         return interpolated_data
 
