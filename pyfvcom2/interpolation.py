@@ -231,16 +231,88 @@ class FVCOMInterpolator(Interpolator):
 
         self.fvcom_reader = fvcom_reader
 
-    def interpolate(self, coordinates: NamedTuple, fvcom_var_name: str) -> np.ndarray:
+    def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
         """Perform interpolation operation for FVCOM data.
 
         Args:
-            coordinates (NamedTuple): Coordinates on the FVCOM grid.
+            coordinates (InterpolationCoordinates): Coordinates on the FVCOM grid.
             fvcom_var_name (str): Name of the FVCOM variable to interpolate.
 
         Returns:
             np.ndarray: Interpolated variable on the FVCOM grid.
         """
-        # Implement FVCOM-specific interpolation logic here
-        pass
-
+        # Get variable dimensions and their names
+        var_dims = self.fvcom_reader.get_var_dimensions(fvcom_var_name)
+        var_ndims = len(var_dims)
+        
+        # Check if time dimension is present
+        has_time = 'time' in var_dims
+        
+        # Check if depth dimension is present (siglay or siglev)
+        has_depth = any(dim in var_dims for dim in ['siglay', 'siglev'])
+        
+        # Determine time indices from coordinates
+        try:
+            len(coordinates.dates)
+            dates = coordinates.dates
+        except TypeError:
+            dates = [coordinates.dates]
+        
+        # Route to appropriate interpolation method based on dimensions
+        if not has_time and not has_depth:
+            # Case 1: 2D time independent (e.g., bathymetry: [node] or [nele])
+            return self._interpolate_2d_static(coordinates, fvcom_var_name)
+        elif has_time and not has_depth:
+            # Case 2: 2D time dependent (e.g., zeta: [time, node])
+            return self._interpolate_2d_time_dependent(coordinates, fvcom_var_name, dates)
+        elif has_time and has_depth:
+            # Case 3: 3D time dependent (e.g., temp: [time, siglay, node])
+            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, dates)
+        else:
+            raise PyFVCOM2ValueError(
+                f"Unsupported variable dimensions for {fvcom_var_name}: {var_dims}"
+            )
+    
+    def _interpolate_2d_static(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
+        """Interpolate a 2D time-independent FVCOM variable.
+        
+        Args:
+            coordinates (InterpolationCoordinates): Target coordinates.
+            fvcom_var_name (str): Name of the FVCOM variable.
+            
+        Returns:
+            np.ndarray: Interpolated variable data with shape (n_points,).
+        """
+        # TODO: Implement 2D static interpolation
+        # This would handle variables like bathymetry (h)
+        raise NotImplementedError("2D static interpolation not yet implemented")
+    
+    def _interpolate_2d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str, dates: list) -> np.ndarray:
+        """Interpolate a 2D time-dependent FVCOM variable.
+        
+        Args:
+            coordinates (InterpolationCoordinates): Target coordinates.
+            fvcom_var_name (str): Name of the FVCOM variable.
+            dates (list): List of target dates.
+            
+        Returns:
+            np.ndarray: Interpolated variable data with shape (n_times, n_points).
+        """
+        # TODO: Implement 2D time-dependent interpolation
+        # This would handle variables like sea surface elevation (zeta)
+        raise NotImplementedError("2D time-dependent interpolation not yet implemented")
+    
+    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str, dates: list) -> np.ndarray:
+        """Interpolate a 3D time-dependent FVCOM variable.
+        
+        Args:
+            coordinates (InterpolationCoordinates): Target coordinates.
+            fvcom_var_name (str): Name of the FVCOM variable.
+            dates (list): List of target dates.
+            
+        Returns:
+            np.ndarray: Interpolated variable data with shape (n_times, n_depths, n_points).
+        """
+        # TODO: Implement 3D time-dependent interpolation
+        # This would handle variables like temperature, salinity, u, v
+        raise NotImplementedError("3D time-dependent interpolation not yet implemented")
