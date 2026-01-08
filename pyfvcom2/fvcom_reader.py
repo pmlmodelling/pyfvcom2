@@ -216,8 +216,23 @@ class FVCOMReader:
         """Get the bathymetry values at element centroids (transformed so to be positive up)"""
         return self.grid.bathy_elements * -1.0
 
-    def get_var(self, var_name):
-        """Return the data for a given variable name.
+    def var_is_node_based(self, var_name: str) -> bool:
+        """Check if a variable is node-based.
+
+        Args:
+            var_name (str): The name of the variable to check.
+        Returns:
+            bool: True if the variable is node-based, False if element-based.
+        """
+        var_dims = self._metadata_dataset.variables[var_name].dimensions
+        if 'node' in var_dims:
+            return True
+        elif 'element' in var_dims:
+            return False
+        else:
+            raise PyFVCOM2ValueError(
+                f"Variable {var_name} is neither node-based nor element-based."
+            )
 
         Effectively a wrapper around Dataset. Warn if the variable
         contains masked data for any reason.
