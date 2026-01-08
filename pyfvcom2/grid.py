@@ -248,12 +248,14 @@ class Grid:
         self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
         self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
 
-    def get_interpolation_coordinates(self, grid_position: str, dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
+    def get_interpolation_coordinates(self, grid_position: str, sigma_type: Optional[str] = None,
+                                      dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
             grid_position: The grid position ('node' or 'element') for which to retrieve
                 interpolation coordinates.
+            sigma_type: The type of sigma coordinate ('layers' or 'levels'). If None, defaults to 'layers'.
             dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
 
         Returns:
@@ -265,20 +267,17 @@ class Grid:
         if grid_position == 'node':
             lons = self.lon
             lats = self.lat
-            sigma_layers = self.sigma_layers.T
-            bathy = self.h
+            if sigma_type == 'levels':
+                depths = self.sigma_levels_z.T
+            else:  # Default to 'layers'    
+                depths = self.sigma_layers_z.T
         else:  # grid_position == 'element'
             lons = self.lonc
             lats = self.latc
-            sigma_layers = self.sigmac_layers.T
-            bathy = self.hc
-
-        # Set zeta to zero for depth calculation (no free surface displacement)
-        zeta = np.zeros_like(bathy)
-
-        # Compute depths from sigma coordinates
-        # TODO - as zeta is zero, we can use the class attribute directly
-        depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
+            if sigma_type == 'levels':
+                depths = self.sigmac_levels_z.T
+            else:  # Default to 'layers'    
+                depths = self.sigmac_layers_z.T
 
         # Use provided dates or empty array
         if dates is None:
