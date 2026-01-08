@@ -277,6 +277,7 @@ class Grid:
         zeta = np.zeros_like(bathy)
 
         # Compute depths from sigma coordinates
+        # TODO - as zeta is zero, we can use the class attribute directly
         depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
 
         # Use provided dates or empty array
