@@ -234,16 +234,43 @@ class FVCOMReader:
                 f"Variable {var_name} is neither node-based nor element-based."
             )
 
-        Effectively a wrapper around Dataset. Warn if the variable
-        contains masked data for any reason.
+    def get_var(self, var_name: str, target_datetime: Optional[datetime]=None,
+                tolerance: Optional[timedelta]=None) -> np.ndarray:
+        """Get the data for a given variable at a specific time.
 
         Args:
             var_name (str): The name of the variable to retrieve.
+            target_datetime (datetime): The target datetime for which to retrieve the data.
         Returns:
-            np.ndarray: The data array for the specified variable.
+            np.ndarray: The data array for the specified variable at the given time.
         """
-        return self._return_variable_data(var_name)
-    
+        if target_datetime is None:
+            # Check if time is a dimension of the variable
+            var_dims = self._metadata_dataset.variables[var_name].dimensions
+            if 'time' not in var_dims:
+                return self._return_grid_variable_data(var_name)
+            else:
+                raise PyFVCOM2ValueError(
+                    f"Variable {var_name} is time-dependent; please provide a target_datetime."
+                )
+        
+        dataset, local_time_index = self._load_dataset_for_datetime(target_datetime, tolerance=tolerance)
+
+        # Make sure variable exists in the dataset
+        if var_name not in dataset.variables:
+            raise PyFVCOM2ValueError(
+                f"Variable {var_name} not found in dataset for time {target_datetime}."
+            )
+        
+        # 2D spatial variable; no depth indexing needed
+        var = dataset.variables[var_name][local_time_index, :]
+        if np.ma.is_masked(var):
+            print(
+                f"Warning: {var_name} contains masked data at time {target_datetime}. "
+                "Masked values will be filled with default fill value."
+            )
+        return np.ma.getdata(var)
+        
     def get_interpolation_coordinates(self, grid_position: str) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
@@ -265,10 +292,10 @@ class FVCOMReader:
             MeshData: Mesh data object compatible with Grid construction.
         """
         # Extract basic mesh components
-        nodes = np.arange(1, self.dataset.dimensions['node'].size+1) # TBC zero based indexing kept here.
-        triangles = self.dataset.variables['nv'][:].T - 1  # Convert to 0-based indexing, transpose to (n_elem, 3)
-        x1 = self.dataset.variables['lon'][:]
-        x2 = self.dataset.variables['lat'][:]
+        nodes = np.arange(1, self._metadata_dataset.dimensions['node'].size+1) # TBC zero based indexing kept here.
+        triangles = self._metadata_dataset.variables['nv'][:].T - 1  # Convert to 0-based indexing, transpose to (n_elem, 3)
+        x1 = self._metadata_dataset.variables['lon'][:]
+        x2 = self._metadata_dataset.variables['lat'][:]
         x3 = self._return_variable_data('h')[:]
 
         open_bdy_node_lists = None
@@ -291,11 +318,11 @@ class FVCOMReader:
         }
         
         # Extract sigma levels at nodes. Transpose from (levels, nodes) to (nodes, levels)
-        sigma_levels = self._return_variable_data("siglev").T
+        sigma_levels = self._return_grid_variable_data("siglev").T
         
         return SigmaData(sigma_config, sigma_levels)
 
-    def _return_variable_data(self, var_name):
+    def _return_grid_variable_data(self, var_name):
         """Return the data for a given variable name.
 
         Warn if the variable contains masked data for any reason.
@@ -305,15 +332,9 @@ class FVCOMReader:
         Returns:
             np.ndarray: The data array for the specified variable.
         """
-        if np.ma.is_masked(self.dataset[var_name][:]):
+        if np.ma.is_masked(self._metadata_dataset.variables[var_name][:]):
             print(
                 f"Warning: {var_name} contains masked data. "
                 "Masked values will be filled with default fill value."
             )
-        return np.ma.getdata(self.dataset.variables[var_name][:])
-
-    def close(self):
-        """Close the dataset to free up resources."""
-        if self.dataset is not None:
-            self.dataset.close()
-            self.dataset = None
+        return np.ma.getdata(self._metadata_dataset.variables[var_name][:])
