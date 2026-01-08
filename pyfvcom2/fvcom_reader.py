@@ -2,14 +2,19 @@
 
 __all__ = ["FVCOMReader"]
 
+from datetime import datetime, timedelta
 import numpy as np
 from netCDF4 import Dataset
+from typing import Union, List, Optional
+from cftime import num2pydate
 
 from .interpolation_coordinates import InterpolationCoordinates
 from .coordinates import sigma_to_z_coords
 from .grid import Grid
 from .mesh_reader import MeshData
 from .sigma_reader import SigmaData
+from .date_utils import round_time
+from .exceptions import PyFVCOM2ValueError
 
 
 class FVCOMReader:
@@ -21,19 +26,112 @@ class FVCOMReader:
         filepath (str): Path to the FVCOM netCDF file.
         dataset (xarray.Dataset): The loaded FVCOM dataset.
     """
+    # Class variable for time conversion
+    DAYS_PER_MILLISECOND = 1.0 / (1000.0 * 60.0 * 60.0 * 24.0)
 
-    def __init__(self, filepath):
+    def __init__(self,
+                 file_paths: Union[str, List[str]]):
         """Initialize the FVCOMReader with the path to the netCDF file.
 
         Args:
-            filepath (str): Path to the FVCOM netCDF file.
+            file_paths (str, list): Path to the FVCOM netCDF file.
         """
-        self.filepath = filepath
-        self.dataset = None
+        # Handle single file path or list of file paths
+        if isinstance(file_paths, str):
+            self.file_paths = [file_paths]
+        else:
+            self.file_paths = file_paths
+
+        # Load only the first file initially for metadata and time-independent data
+        print(f'Accessing FVCOM metadata from: {self.file_paths[0]}')
+        self._metadata_dataset = Dataset(self.file_paths[0])
+
         self._grid = None  # Lazy initialization
+
+        # Build the time index mapping for multiple files
+        self._build_time_index_mapping()
 
         # Load the dataset upon initialization
         self._load_data()
+
+    def _build_time_index_mapping(self):
+        """Build a mapping from datetime to (file_path, local_time_index)"""
+        self._time_to_file_map = {}
+        self._all_dates = []
+
+        for file_path in self.file_paths:
+            with Dataset(file_path) as ds:
+                times = self._read_times(ds)
+                for local_idx, time_val in enumerate(times):
+                    self._time_to_file_map[time_val] = (file_path, local_idx)
+                    self._all_dates.append(time_val)
+
+        # Sort dates for efficient searching
+        self._all_dates.sort()
+
+    def _read_times(self, dataset: Dataset) -> List[datetime]:
+        """Read time variable from the dataset and convert to datetime objects.
+
+        Args:
+            dataset (Dataset): The netCDF dataset.
+        Returns:
+            List[datetime]: List of datetime objects corresponding to the time variable.
+        """
+        time_raw = (dataset.variables['Itime'][:] +
+                    dataset.variables['Itime2'][:] * self.DAYS_PER_MILLISECOND)
+        units = dataset.variables['Itime'].units
+
+        datetime_raw = num2pydate(time_raw[:], units=units)
+        return round_time(datetime_raw)
+
+    def _load_dataset_for_datetime(self, target_datetime, tolerance=None):
+        """Load the appropriate dataset for a given datetime
+
+        Args:
+            target_datetime: The target datetime to find data for
+            tolerance: Maximum allowed time difference (as timedelta). If None, uses default bounds checking.
+        """
+        # Convert datetime to numpy datetime64 if needed
+        if isinstance(target_datetime, datetime):
+            target_datetime = np.datetime64(target_datetime)
+
+        # Check bounds first
+        if len(self._all_dates) == 0:
+            raise PyFVCOM2ValueError("No dates available in the dataset(s)")
+
+        start_date = self._all_dates[0]
+        end_date = self._all_dates[-1]
+
+        # Check if target is exactly in our time mapping
+        if target_datetime in self._time_to_file_map:
+            required_file_path, local_time_index = self._time_to_file_map[target_datetime]
+        else:
+            # Check if target is within reasonable bounds
+            if target_datetime < start_date or target_datetime > end_date:
+                raise PyFVCOM2ValueError(
+                    f"Target datetime {target_datetime} is outside the available data range "
+                    f"[{start_date} to {end_date}]"
+                )
+
+            # Find closest time within the valid range
+            time_diffs = [abs(dt - target_datetime) for dt in self._all_dates]
+            closest_idx = time_diffs.index(min(time_diffs))
+            closest_time = self._all_dates[closest_idx]
+
+            # Optional tolerance check
+            if tolerance is not None:
+                min_diff = min(time_diffs)
+                if min_diff > np.timedelta64(tolerance):
+                    raise PyFVCOM2ValueError(
+                        f"Closest available time ({closest_time}) is {min_diff} away from target "
+                        f"({target_datetime}), which exceeds tolerance ({tolerance})"
+                    )
+
+            required_file_path, local_time_index = self._time_to_file_map[closest_time]
+
+        dataset = Dataset(required_file_path)
+
+        return dataset, local_time_index
 
     @property
     def grid(self) -> Grid:
@@ -47,10 +145,6 @@ class FVCOMReader:
             sigma_data = self._extract_sigma_data()
             self._grid = Grid(mesh_data, sigma_data, "geographic")
         return self._grid
-
-    def _load_data(self):
-        """Load the FVCOM netCDF file into an xarray Dataset."""
-        self.dataset = Dataset(self.filepath)
 
     @property
     def n_nodes(self):
