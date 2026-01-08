@@ -234,6 +234,22 @@ class FVCOMReader:
                 f"Variable {var_name} is neither node-based nor element-based."
             )
 
+    def get_sigma_type(self, var_name: str) -> str:
+        """Get the sigma coordinate type for a variable.
+
+        Args:
+            var_name (str): The name of the variable.
+        Returns:
+            str: 'siglay' if the variable uses sigma layers, 'siglev' if it uses sigma levels.
+        """
+        var_dims = self._metadata_dataset.variables[var_name].dimensions
+        if 'siglay' in var_dims:
+            return 'siglay'
+        elif 'siglev' in var_dims:
+            return 'siglev'
+        else:
+            return None
+
     def get_var(self, var_name: str, target_datetime: Optional[datetime]=None,
                 tolerance: Optional[timedelta]=None) -> np.ndarray:
         """Get the data for a given variable at a specific time.
@@ -271,6 +287,45 @@ class FVCOMReader:
             )
         return np.ma.getdata(var)
         
+    def get_z_levels(self, var_name: str) -> np.ndarray:
+        """Get z levels/layers for the variable based on whether it is node or element based.
+        
+        Args:
+            var_name (str): The name of the variable.
+        
+        Returns:
+            np.ndarray: Sigma levels array.
+        """
+        var_is_node_based = self.var_is_node_based(var_name)
+
+        sigma_type = self.get_sigma_type(var_name)
+
+        if var_is_node_based:
+            if sigma_type == 'siglay':
+                return self.fvcom_reader.grid.sigma_layers_z
+            else:
+                return self.fvcom_reader.grid.sigma_levels_z
+        else:
+            if sigma_type == 'siglay':
+                return self.fvcom_reader.grid.sigmac_layers_z
+            else:
+                return self.fvcom_reader.grid.sigmac_levels_z
+
+    def get_n_z_levels(self, var_name: str) -> int:
+        """Get number of z levels/layers
+        
+        Args:
+            var_name (str): The name of the variable.
+        
+        Returns:
+            int: Number of sigma levels/layers.
+        """
+        sigma_type = self.get_sigma_type(var_name)
+        if sigma_type == 'siglay':
+            return self.fvcom_reader.grid.n_sigma_layers
+        else:
+            return self.fvcom_reader.grid.n_sigma_levels
+
     def get_interpolation_coordinates(self, grid_position: str) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 

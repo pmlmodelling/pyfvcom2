@@ -292,15 +292,8 @@ class FVCOMInterpolator(Interpolator):
         # Check if time dimension is present
         has_time = 'time' in var_dims
         
-        # Check if depth dimension is present (siglay or siglev)
-        sigma_type = None
-        if 'siglay' in var_dims:
-            sigma_type = 'siglay'
-        elif 'siglev' in var_dims:
-            sigma_type = 'siglev'
-
         # Set has_depth flag
-        has_depth = sigma_type is not None
+        has_depth = self.fvcom_reader.get_sigma_type(fvcom_var_name) is not None
 
         # Determine time indices from coordinates
         try:
@@ -318,7 +311,7 @@ class FVCOMInterpolator(Interpolator):
             return self._interpolate_2d_time_dependent(coordinates, fvcom_var_name, dates)
         elif has_time and has_depth:
             # Case 3: 3D time dependent (e.g., temp: [time, siglay, node])
-            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, dates, sigma_type)
+            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, dates)
         else:
             raise PyFVCOM2ValueError(
                 f"Unsupported variable dimensions for {fvcom_var_name}: {var_dims}"
@@ -438,14 +431,12 @@ class FVCOMInterpolator(Interpolator):
 
         return interpolated_data
 
-    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str,
-                                       sigma_type: str) -> np.ndarray:
+    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
         """Interpolate a 3D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
-            sigma_type (Optional[str]): Type of sigma coordinate ('siglay' or 'siglev').
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_depths, n_points).
@@ -462,7 +453,7 @@ class FVCOMInterpolator(Interpolator):
         n_points = coordinates.lons.shape[0]
 
         # The number of depths in the FVCOM data (variable dependent)
-        n_depths_fvcom = self._get_n_z_levels(sigma_type=sigma_type)
+        n_depths_fvcom = self.fvcom_reader.get_n_z_levels(fvcom_var_name)
 
         # Is the variable node or element based?
         var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
@@ -476,7 +467,7 @@ class FVCOMInterpolator(Interpolator):
         # Depth are spatially variable in FVCOM, so we need to interpolate these first
 
         # Compute depth levels (ignores temporal variation in zeta)
-        fvcom_depths = self._get_z_levels(var_is_node_based, sigma_type)
+        fvcom_depths = self.fvcom_reader.get_z_levels(fvcom_var_name)
 
         # First, interpolate onto the new horizontal grid for each depth level
         depth_on_target_horizontal_grid = np.empty(
@@ -610,38 +601,3 @@ class FVCOMInterpolator(Interpolator):
         )
         
         return interpolator
-
-    def _get_z_levels(self, var_is_node_based: bool, sigma_type: str) -> np.ndarray:
-        """Get z levels/layers for the variable based on whether it is node or element based.
-        
-        Args:
-            var_is_node_based (bool): True if the variable is node based, False if element based.
-            sigma_type (str): Type of sigma coordinate ('siglay' or 'siglev').
-        
-        Returns:
-            np.ndarray: Sigma levels array.
-        """
-        if var_is_node_based:
-            if sigma_type == 'siglay':
-                return self.fvcom_reader.grid.sigma_layers_z
-            else:
-                return self.fvcom_reader.grid.sigma_levels_z
-        else:
-            if sigma_type == 'siglay':
-                return self.fvcom_reader.grid.sigmac_layers_z
-            else:
-                return self.fvcom_reader.grid.sigmac_levels_z
-
-    def _get_n_z_levels(self, sigma_type: str) -> int:
-        """Get number of z levels/layers
-        
-        Args:
-            sigma_type (str): Type of sigma coordinate ('siglay' or 'siglev').
-        
-        Returns:
-            int: Number of sigma levels/layers.
-        """
-        if sigma_type == 'siglay':
-            return self.fvcom_reader.grid.n_sigma_layers
-        else:
-            return self.fvcom_reader.grid.n_sigma_levels
