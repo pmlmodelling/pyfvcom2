@@ -4,13 +4,15 @@ import numpy as np
 from abc import ABC, abstractmethod
 from scipy import interpolate
 from scipy.spatial import Delaunay
-from scipy.interpolate import LinearNDInterpolator
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+from matplotlib.tri import Triangulation
 from typing import NamedTuple, Optional
 
 from .cmems_reader import CMEMSReader, default_fvcom_to_cmems_var_names
 from .fvcom_reader import FVCOMReader
 from .exceptions import PyFVCOM2ValueError
 from .interpolation_coordinates import InterpolationCoordinates
+from .coordinates import sigma_to_z_coords
 
 __all__ = ["InterpolationCoordinates", "Interpolator", "CMEMSInterpolator", "FVCOMInterpolator"]
 
@@ -225,11 +227,54 @@ class CMEMSInterpolator(Interpolator):
 
 
 class FVCOMInterpolator(Interpolator):
+    """ FVCOM interpolator class
+    
+    There are several methods that could be used for interpolating data:
+
+    1. Nearest-neighbor interpolation
+    2. Linear interpolation from a delaunay triangulation
+    3. Radial basis function interpolation
+
+    These different methods have different trade-offs in terms of speed and accuracy, with RBFs being
+    the most accurate but also the slowest. For now, we only support linear interpolation using
+    scipy's LinearNDInterpolator. However, this could be extended in future to support other methods.
+
+    Further notes:
+    - In nested FVCOM grids, the elements are identical in the overlap zone, meaning there is no no
+    need to interpolate from one grid to another. Instead, one can simply extract the data from the
+    parent grid at the locations of the child grid nodes/elements.
+    - For node-based variables (e.g., zeta, h), interpolation is performed using the grid nodes. We use
+    the input grid's connectivity (triangles) to build a triangulation for the nodes (i.e., the nv array).
+    - For element-based variables (e.g., u, v), we must construct a new triangulation based on the element
+    centroids (xc, yc).
+    - We should allow for extrapolation of values outside the convex hull of the triangulation, which may
+    be necessary when moving from a coarse grid to a finer grid. This is done by testing for NaN values in
+    the interpolated output and filling them using nearest-neighbor interpolation. A warning is issued when
+    this occurs.
+    - Once data has been interpolated onto all horizontal surfaces of the input grid, we then interpolate
+    vertically onto the supplie depth levels.
+    - Options to parallelise the interpolation step are included.
+
+    Args:
+        fvcom_reader (FVCOMReader): An instance of FVCOMReader with loaded data.
+    """
     
     def __init__(self, fvcom_reader: FVCOMReader):
         super().__init__()
 
         self.fvcom_reader = fvcom_reader
+
+        # For node based data, create triangulation for FVCOM grid nodes based on
+        # nv connectivity array
+        self.triangulation_nodes = Triangulation(
+            fvcom_reader.grid.x,
+            fvcom_reader.grid.y,
+            triangles=fvcom_reader.grid.triangles)
+
+        # For element based data, form a new triangulation based on element centroids
+        self.triangulation_elements = Triangulation(
+            fvcom_reader.grid.xc,
+            fvcom_reader.grid.yc)
 
     def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
         """Perform interpolation operation for FVCOM data.
@@ -243,14 +288,20 @@ class FVCOMInterpolator(Interpolator):
         """
         # Get variable dimensions and their names
         var_dims = self.fvcom_reader.get_var_dimensions(fvcom_var_name)
-        var_ndims = len(var_dims)
         
         # Check if time dimension is present
         has_time = 'time' in var_dims
         
         # Check if depth dimension is present (siglay or siglev)
-        has_depth = any(dim in var_dims for dim in ['siglay', 'siglev'])
-        
+        sigma_type = None
+        if 'siglay' in var_dims:
+            sigma_type = 'siglay'
+        elif 'siglev' in var_dims:
+            sigma_type = 'siglev'
+
+        # Set has_depth flag
+        has_depth = sigma_type is not None
+
         # Determine time indices from coordinates
         try:
             len(coordinates.dates)
@@ -267,13 +318,14 @@ class FVCOMInterpolator(Interpolator):
             return self._interpolate_2d_time_dependent(coordinates, fvcom_var_name, dates)
         elif has_time and has_depth:
             # Case 3: 3D time dependent (e.g., temp: [time, siglay, node])
-            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, dates)
+            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, dates, sigma_type)
         else:
             raise PyFVCOM2ValueError(
                 f"Unsupported variable dimensions for {fvcom_var_name}: {var_dims}"
             )
     
-    def _interpolate_2d_static(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
+    def _interpolate_2d_static(self, coordinates: InterpolationCoordinates,
+                               fvcom_var_name: str) -> np.ndarray:
         """Interpolate a 2D time-independent FVCOM variable.
         
         Args:
@@ -283,36 +335,313 @@ class FVCOMInterpolator(Interpolator):
         Returns:
             np.ndarray: Interpolated variable data with shape (n_points,).
         """
-        # TODO: Implement 2D static interpolation
-        # This would handle variables like bathymetry (h)
-        raise NotImplementedError("2D static interpolation not yet implemented")
+        n_points = len(coordinates.lons)
+
+        # Initialise array to hold interpolated data
+        interpolated_data = np.empty((n_points), dtype=np.float32)
+
+        # Target points for interpolation
+        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+
+        # FVCOM data for interpolation
+        data = self.fvcom_reader.get_var(fvcom_var_name)
+
+        # Create interpolator
+        var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
+        interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, data)
+
+        # Interpolate
+        interpolated_data[:] = interpolator(target_points)
+
+        # Check for NaNs indicating out-of-bounds points. Fill these using nearest-neighbor
+        # interpolation and issue a warning.
+        nan_mask = np.isnan(interpolated_data)
+        if np.any(nan_mask):
+            nan_indices = np.where(nan_mask)[0]
+            nan_coords = target_points[nan_indices]
+            print(
+                f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points.\n"
+                f"Points outside FVCOM grid coverage: "
+                f"{[(coord[0], coord[1]) for coord in nan_coords[:1]]}"
+                f"These will be filled using nearest-neighbor interpolation."
+            )
+            if len(nan_indices) > 1:
+                print(f" ... and {len(nan_indices) - 1} more points")
+
+            # Nearest-neighbor interpolator
+            nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, data)
+            interpolated_data[nan_indices] = nn_interpolator(target_points[nan_indices])            
+
+        return interpolated_data
     
-    def _interpolate_2d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str, dates: list) -> np.ndarray:
+    def _interpolate_2d_time_dependent(self, coordinates: InterpolationCoordinates,
+                                       fvcom_var_name: str) -> np.ndarray:
         """Interpolate a 2D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
-            dates (list): List of target dates.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_points).
         """
-        # TODO: Implement 2D time-dependent interpolation
-        # This would handle variables like sea surface elevation (zeta)
-        raise NotImplementedError("2D time-dependent interpolation not yet implemented")
-    
-    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str, dates: list) -> np.ndarray:
+        try:
+            len(coordinates.dates)
+            dates = coordinates.dates
+        except TypeError:
+            # Single datetime object, wrap in list
+            dates = [coordinates.dates]
+
+        # Determine the number of dates and points
+        n_dates = len(dates)
+        n_points = len(coordinates.lons)
+
+        # Initialise array to hold interpolated data
+        interpolated_data = np.empty((n_dates, n_points), dtype=np.float32)
+
+        # Target points for interpolation
+        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+
+        # Is the variable node or element based?
+        var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
+
+        # Loop over each time index to perform interpolation
+        for d_idx, target_date in enumerate(dates):
+            print(f"Interpolating FVCOM {fvcom_var_name} to FVCOM grid for date: {target_date}.")
+
+            # FVCOM data for this time step
+            data = self.fvcom_reader.get_var_at_time(fvcom_var_name, target_date)
+
+            # Create interpolator
+            interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, data)
+
+            interpolated_data[d_idx, :] = interpolator(target_points)
+
+            # Check for NaN values indicating out-of-bounds points
+            nan_mask = np.isnan(interpolated_data[d_idx, :])
+            if np.any(nan_mask):
+                nan_indices = np.where(nan_mask)[0]
+                nan_coords = target_points[nan_indices]
+                print(
+                    f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points "
+                    f"at time {target_date}.\n"
+                    f"Points outside FVCOM grid coverage: "
+                    f"{[(coord[0], coord[1]) for coord in nan_coords[:1]]}"
+                    f"These will be filled using nearest-neighbor interpolation."
+                )
+                if len(nan_indices) > 1:
+                    print(f" ... and {len(nan_indices) - 1} more points")
+
+                # Nearest-neighbor interpolator
+                nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, data)
+                interpolated_data[d_idx, nan_indices] = nn_interpolator(target_points[nan_indices])
+
+        return interpolated_data
+
+    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str,
+                                       sigma_type: str) -> np.ndarray:
         """Interpolate a 3D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
-            dates (list): List of target dates.
+            sigma_type (Optional[str]): Type of sigma coordinate ('siglay' or 'siglev').
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_depths, n_points).
         """
-        # TODO: Implement 3D time-dependent interpolation
-        # This would handle variables like temperature, salinity, u, v
-        raise NotImplementedError("3D time-dependent interpolation not yet implemented")
+        try:
+            len(coordinates.dates)
+            dates = coordinates.dates
+        except TypeError:
+            dates = [coordinates.dates]
+
+        # Determine the number of dates, depths and points we will interpolate to
+        n_dates = len(dates)
+        n_depths = coordinates.depths.shape[0]
+        n_points = coordinates.lons.shape[0]
+
+        # The number of depths in the FVCOM data (variable dependent)
+        n_depths_fvcom = self._get_n_z_levels(sigma_type=sigma_type)
+
+        # Is the variable node or element based?
+        var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
+
+        # Target points for interpolation
+        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+
+        # Depth interpolation 
+        # -------------------
+
+        # Depth are spatially variable in FVCOM, so we need to interpolate these first
+
+        # Compute depth levels (ignores temporal variation in zeta)
+        fvcom_depths = self._get_z_levels(var_is_node_based, sigma_type)
+
+        # First, interpolate onto the new horizontal grid for each depth level
+        depth_on_target_horizontal_grid = np.empty(
+            (n_depths_fvcom, n_points), dtype=fvcom_depths.dtype
+        )
+        
+        for i in range(n_depths_fvcom):
+            depth_interp = self._get_linear_interpolator_for_variable(var_is_node_based, fvcom_depths[i,:])
+
+            depth_on_target_horizontal_grid[i, :] = depth_interp(target_points)
+
+            # Check for NaN values indicating out-of-bounds points
+            nan_mask = np.isnan(depth_on_target_horizontal_grid[i, :])
+            if np.any(nan_mask):
+                nan_indices = np.where(nan_mask)[0]
+                nan_coords = target_points[nan_indices]
+
+                # Nearest-neighbor interpolator
+                nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, fvcom_depths[i,:])
+                depth_on_target_horizontal_grid[i, nan_indices] = nn_interpolator(nan_coords)
+
+        # Variable interpolation
+        # ----------------------
+
+        # Initialise array to hold interpolated data
+        interpolated_var = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
+
+        # Loop over each time index to perform interpolation
+        for d_idx, target_date in enumerate(dates):
+            print(f"Interpolating FVCOM {fvcom_var_name} for date: {target_date}.")
+
+            fvcom_var = self.fvcom_reader.get_var(fvcom_var_name, target_date)
+
+            # First, interpolate onto the new horizontal grid for each depth level
+            var_on_target_horizontal_grid = np.empty(
+                (n_depths_fvcom, n_points), dtype=fvcom_var.dtype
+            )
+
+            for i in range(n_depths_fvcom):
+                interp = self._get_linear_interpolator_for_variable(var_is_node_based, fvcom_var[i, :])
+
+                var_on_target_horizontal_grid[i, :] = interp(target_points)
+
+                # Check for NaN values indicating out-of-bounds points
+                nan_mask = np.isnan(var_on_target_horizontal_grid[i, :])
+                if np.any(nan_mask):
+                    nan_indices = np.where(nan_mask)[0]
+                    nan_coords = target_points[nan_indices]
+                    print(
+                        f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points "
+                        f"at depth index {i} and time {target_date}.\n"
+                        f"Points outside FVCOM grid coverage: "
+                        f"{[(coord[0], coord[1]) for coord in nan_coords[:1]]}."
+                        f"These will be filled using nearest-neighbor interpolation."
+                    )
+                    if len(nan_indices) > 1:
+                        print(f" ... and {len(nan_indices) - 1} more points")
+
+                    # Nearest-neighbor interpolator
+                    nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, fvcom_var[i, :])
+                    var_on_target_horizontal_grid[i, nan_indices] = nn_interpolator(nan_coords)
+
+            # Next, interpolate onto depth levels of each vertical point
+            var_on_target_grid = np.empty((n_depths, n_points), dtype=fvcom_var.dtype)
+
+            for i in range(n_points):
+                interp = interpolate.interp1d(
+                    depth_on_target_horizontal_grid[:, i],
+                    var_on_target_horizontal_grid[:, i],
+                    kind="linear",
+                    bounds_error=False,
+                    fill_value="extrapolate",
+                )
+                target_depths = coordinates.depths[:, i]
+                var_on_target_grid[:, i] = interp(target_depths)
+
+            interpolated_var[d_idx, :, :] = var_on_target_grid
+
+        return interpolated_var
+
+    def _get_linear_interpolator_for_variable(self, var_is_node_based: bool,
+                                              data: np.ndarray) -> LinearNDInterpolator:
+        """Get the appropriate linear interpolator based on whether the variable is node or element based.
+        
+        Args:
+            var_is_node_based (bool): True if the variable is node based, False if element based.
+            data (np.ndarray): Data array for the variable.
+        Returns:
+            LinearNDInterpolator: The interpolator object.
+        """
+        # Determine if variable is node or element based
+        if var_is_node_based:
+            # Node based variable
+            triangulation = self.triangulation_nodes
+        else:
+            # Element based variable
+            triangulation = self.triangulation_elements
+        
+        # Create interpolator
+        interpolator = LinearNDInterpolator(
+            triangulation.triangles,
+            data
+        )
+        
+        return interpolator
+
+    def _get_nn_interpolator_for_variable(self, var_is_node_based: bool,
+                                          data: np.ndarray) -> NearestNDInterpolator:
+        """Get the appropriate nearest-neighbor interpolator
+        
+        Args:
+            var_is_node_based (bool): True if the variable is node based, False if element based.
+            data (np.ndarray): Data array for the variable.
+        Returns:
+            LinearNDInterpolator: The nearest-neighbor interpolator object.
+        """
+        # Determine if variable is node or element based
+        if var_is_node_based:
+            # Node based variable
+            x = self.fvcom_reader.grid.x
+            y = self.fvcom_reader.grid.y
+        else:
+            # Element based variable
+            x = self.fvcom_reader.grid.xc
+            y = self.fvcom_reader.grid.yc
+        
+        # Create nearest-neighbor interpolator
+        interpolator = interpolate.NearestNDInterpolator(
+            np.column_stack((x, y)),
+            data
+        )
+        
+        return interpolator
+
+    def _get_z_levels(self, var_is_node_based: bool, sigma_type: str) -> np.ndarray:
+        """Get z levels/layers for the variable based on whether it is node or element based.
+        
+        Args:
+            var_is_node_based (bool): True if the variable is node based, False if element based.
+            sigma_type (str): Type of sigma coordinate ('siglay' or 'siglev').
+        
+        Returns:
+            np.ndarray: Sigma levels array.
+        """
+        if var_is_node_based:
+            if sigma_type == 'siglay':
+                return self.fvcom_reader.grid.sigma_layers_z
+            else:
+                return self.fvcom_reader.grid.sigma_levels_z
+        else:
+            if sigma_type == 'siglay':
+                return self.fvcom_reader.grid.sigmac_layers_z
+            else:
+                return self.fvcom_reader.grid.sigmac_levels_z
+
+    def _get_n_z_levels(self, sigma_type: str) -> int:
+        """Get number of z levels/layers
+        
+        Args:
+            sigma_type (str): Type of sigma coordinate ('siglay' or 'siglev').
+        
+        Returns:
+            int: Number of sigma levels/layers.
+        """
+        if sigma_type == 'siglay':
+            return self.fvcom_reader.grid.n_sigma_layers
+        else:
+            return self.fvcom_reader.grid.n_sigma_levels
