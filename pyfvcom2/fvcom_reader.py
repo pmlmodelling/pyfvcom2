@@ -189,12 +189,22 @@ class FVCOMReader:
     @property
     def sigma_layers_nodes(self):
         """Get the sigma layer values at nodes."""
-        return self.grid.sigma_layers
+        return self.grid.sigma_layers.T
 
     @property
     def sigma_layers_elements(self):
         """Get the sigma layer values at element centroids."""
-        return self.grid.sigmac_layers
+        return self.grid.sigmac_layers.T
+
+    @property
+    def sigma_levels_nodes(self):
+        """Get the sigma level values at nodes."""
+        return self.grid.sigma_levels.T
+    
+    @property
+    def sigma_levels_elements(self):
+        """Get the sigma level values at element centroids."""
+        return self.grid.sigmac_levels.T
 
     @property
     def bathy_nodes(self):
