@@ -51,9 +51,6 @@ class FVCOMReader:
         # Build the time index mapping for multiple files
         self._build_time_index_mapping()
 
-        # Load the dataset upon initialization
-        self._load_data()
-
     def _build_time_index_mapping(self):
         """Build a mapping from datetime to (file_path, local_time_index)"""
         self._time_to_file_map = {}
@@ -65,6 +62,9 @@ class FVCOMReader:
                 for local_idx, time_val in enumerate(times):
                     self._time_to_file_map[time_val] = (file_path, local_idx)
                     self._all_dates.append(time_val)
+
+        # Sometime FVCOM dates are repeated across files; ensure uniqueness
+        self._all_dates = list(set(self._all_dates))
 
         # Sort dates for efficient searching
         self._all_dates.sort()
@@ -188,22 +188,22 @@ class FVCOMReader:
 
     @property
     def sigma_layers_nodes(self):
-        """Get the sigma layer values at nodes."""
+        """Get the sigma layer values at nodes (n_layers, n_nodes)."""
         return self.grid.sigma_layers.T
 
     @property
     def sigma_layers_elements(self):
-        """Get the sigma layer values at element centroids."""
+        """Get the sigma layer values at element centroids (n_layers, n_elements)."""
         return self.grid.sigmac_layers.T
 
     @property
     def sigma_levels_nodes(self):
-        """Get the sigma level values at nodes."""
+        """Get the sigma level values at nodes (n_levels, n_nodes)."""
         return self.grid.sigma_levels.T
     
     @property
     def sigma_levels_elements(self):
-        """Get the sigma level values at element centroids."""
+        """Get the sigma level values at element centroids (n_levels, n_elements)."""
         return self.grid.sigmac_levels.T
 
     @property
@@ -215,6 +215,15 @@ class FVCOMReader:
     def bathy_elements(self):
         """Get the bathymetry values at element centroids (transformed so to be positive up)"""
         return self.grid.bathy_elements * -1.0
+
+    @property
+    def dates(self) -> List[datetime]:
+        """Get the available dates in the dataset(s).
+
+        Returns:
+            List[datetime]: List of available datetime objects.
+        """
+        return self._all_dates
 
     def var_is_node_based(self, var_name: str) -> bool:
         """Check if a variable is node-based.
@@ -326,7 +335,10 @@ class FVCOMReader:
         else:
             return self.fvcom_reader.grid.n_sigma_levels
 
-    def get_interpolation_coordinates(self, grid_position: str) -> InterpolationCoordinates:
+    def get_interpolation_coordinates(self, grid_position: str,
+                                      sigma_type: Optional[str] = 'layer',
+                                      coordinate_system: Optional[str] = "geographic",
+                                      dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Wrapper for Grid.get_interpolation_coordinates.
@@ -334,11 +346,17 @@ class FVCOMReader:
         Args:
             grid_position: The grid position ('node' or 'element') for which to retrieve
             interpolation coordinates.
+            sigma_type: The type of sigma coordinate ('layer' or 'levels') to use for depth calculation.
+            coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation
+            coordinates.
+            dates: Optional array of datetime objects for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
-        return self.grid.get_interpolation_coordinates(grid_position)
+        return self.grid.get_interpolation_coordinates(grid_position, sigma_type=sigma_type,
+                                                       coordinate_system=coordinate_system,
+                                                       dates=dates)
 
     def _extract_mesh_data(self) -> MeshData:
         """Extract mesh data from FVCOM output file.
@@ -351,7 +369,7 @@ class FVCOMReader:
         triangles = self._metadata_dataset.variables['nv'][:].T - 1  # Convert to 0-based indexing, transpose to (n_elem, 3)
         x1 = self._metadata_dataset.variables['lon'][:]
         x2 = self._metadata_dataset.variables['lat'][:]
-        x3 = self._return_variable_data('h')[:]
+        x3 = self._return_grid_variable_data('h')[:]
 
         open_bdy_node_lists = None
         bdy_types = None
