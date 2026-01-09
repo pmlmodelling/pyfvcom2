@@ -246,7 +246,7 @@ class FVCOMReader:
         var_dims = self._metadata_dataset.variables[var_name].dimensions
         if 'node' in var_dims:
             return True
-        elif 'element' in var_dims:
+        elif 'nele' in var_dims:
             return False
         else:
             raise PyFVCOM2ValueError(
@@ -321,14 +321,14 @@ class FVCOMReader:
 
         if var_is_node_based:
             if sigma_type == 'siglay':
-                return self.fvcom_reader.grid.sigma_layers_z
+                return self.grid.sigma_layers_z.T
             else:
-                return self.fvcom_reader.grid.sigma_levels_z
+                return self.grid.sigma_levels_z.T
         else:
             if sigma_type == 'siglay':
-                return self.fvcom_reader.grid.sigmac_layers_z
+                return self.grid.sigmac_layers_z.T
             else:
-                return self.fvcom_reader.grid.sigmac_levels_z
+                return self.grid.sigmac_levels_z.T
 
     def get_n_z_levels(self, var_name: str) -> int:
         """Get number of z levels/layers
@@ -341,9 +341,9 @@ class FVCOMReader:
         """
         sigma_type = self.get_sigma_type(var_name)
         if sigma_type == 'siglay':
-            return self.fvcom_reader.grid.n_sigma_layers
+            return self.grid.n_sigma_layers
         else:
-            return self.fvcom_reader.grid.n_sigma_levels
+            return self.grid.n_sigma_levels
 
     def get_interpolation_coordinates(self, grid_position: str,
                                       sigma_type: Optional[str] = 'layer',
