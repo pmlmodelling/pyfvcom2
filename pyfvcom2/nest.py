@@ -306,12 +306,14 @@ class NestManager:
         return np.array(all_element_weights, dtype=np.float32)
 
     def get_interpolation_coordinates(self, grid_position: str,
+                                      sigma_type: Optional[str] = 'layer',
                                       coordinate_system: Optional[str] = "geographic") -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
             grid_position: The grid position ('node' or 'element') for which to retrieve
             interpolation coordinates.
+            sigma_type: The type of sigma coordinate ('layer' or 'levels') to use for depth calculation.
             coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
 
         Returns:
@@ -331,8 +333,10 @@ class NestManager:
             else:  # cartesian
                 x1 = self._grid_ref.x[indices]
                 x2 = self._grid_ref.y[indices]
-            sigma_layers = self._grid_ref.sigma_layers_nodes[indices, :].T
-            bathy = self._grid_ref.bathy_nodes[indices]
+            if sigma_type == 'levels':
+                x3 = self.sigma_levels_z[indices, :].T
+            else:  # Default to 'layers'    
+                x3 = self.sigma_layers_z[indices, :].T
         else:  # grid_position == 'element'
             indices = self.get_all_nest_elements()
             if coordinate_system == "geographic":
@@ -341,16 +345,10 @@ class NestManager:
             else:  # cartesian
                 x1 = self._grid_ref.xc[indices]
                 x2 = self._grid_ref.yc[indices]
-            sigma_layers = self._grid_ref.sigma_layers_elements[indices, :].T
-            bathy = self._grid_ref.bathy_elements[indices]
-
-        # Ignore temporal variations in zeta and set it to zero. This is just to get the actual depth
-        # of sigma levels/layers for interpolating vertically. Given CMEMS data has already been interpolated
-        # onto fixed depth levels, I think this simplification is acceptable.
-        zeta = np.zeros_like(bathy)
-
-        # Compute depths
-        x3 = sigma_to_z_coords(sigma_layers, zeta, bathy)
+            if sigma_type == 'levels':
+                x3 = self.sigmac_levels_z[indices, :].T
+            else:  # Default to 'layers'    
+                x3 = self.sigmac_layers_z[indices, :].T
 
         return InterpolationCoordinates(self._dates, x3, x2, x1, coordinate_system=coordinate_system)
 
