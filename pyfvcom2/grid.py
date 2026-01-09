@@ -249,6 +249,7 @@ class Grid:
         self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
 
     def get_interpolation_coordinates(self, grid_position: str, sigma_type: Optional[str] = None,
+                                      coordinate_system: str = "geographic",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
@@ -256,34 +257,46 @@ class Grid:
             grid_position: The grid position ('node' or 'element') for which to retrieve
                 interpolation coordinates.
             sigma_type: The type of sigma coordinate ('layers' or 'levels'). If None, defaults to 'layers'.
+            coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
             dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
         if grid_position not in ['node', 'element']:
-            raise ValueError("grid_position must be either 'node' or 'element'")
+            raise PyFVCOM2ValueError("grid_position must be either 'node' or 'element'")
+
+        if coordinate_system not in ['geographic', 'cartesian']:
+            raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
         if grid_position == 'node':
-            lons = self.lon
-            lats = self.lat
+            if coordinate_system == 'geographic':
+                x1 = self.lon_nodes
+                x2 = self.lat_nodes
+            else:  # cartesian
+                x1 = self.x
+                x2 = self.y
             if sigma_type == 'levels':
-                depths = self.sigma_levels_z.T
+                x3 = self.sigma_levels_z.T
             else:  # Default to 'layers'    
-                depths = self.sigma_layers_z.T
+                x3 = self.sigma_layers_z.T
         else:  # grid_position == 'element'
-            lons = self.lonc
-            lats = self.latc
+            if coordinate_system == 'geographic':
+                x1 = self.lon_elements
+                x2 = self.lat_elements
+            else:  # cartesian
+                x1 = self.xc
+                x2 = self.yc
             if sigma_type == 'levels':
-                depths = self.sigmac_levels_z.T
+                x3 = self.sigmac_levels_z.T
             else:  # Default to 'layers'    
-                depths = self.sigmac_layers_z.T
+                x3 = self.sigmac_layers_z.T
 
         # Use provided dates or empty array
         if dates is None:
             dates = np.array([])
 
-        return InterpolationCoordinates(dates, depths, lats, lons)
+        return InterpolationCoordinates(dates, x3, x2, x1)
 
 
 def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_system: str,
