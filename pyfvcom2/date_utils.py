@@ -47,5 +47,5 @@ def round_time(datetime_raw, rounding_interval=60):
     for dt in datetime_raw:
         seconds = (dt - dt.min).seconds
         rounding = (seconds + rounding_interval/2) // rounding_interval * rounding_interval
-        datetime_rounded.append(dt + datetime.timedelta(0,rounding-seconds,-dt.microsecond))
+        datetime_rounded.append(dt + timedelta(0,rounding-seconds,-dt.microsecond))
     return datetime_rounded
