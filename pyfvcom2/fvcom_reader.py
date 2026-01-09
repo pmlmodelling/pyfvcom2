@@ -225,6 +225,16 @@ class FVCOMReader:
         """
         return self._all_dates
 
+    def get_var_dimensions(self, var_name: str) -> tuple:
+        """Get the dimensions of a variable.
+
+        Args:
+            var_name (str): The name of the variable to check.
+        Returns:
+            tuple: The dimensions of the variable.
+        """
+        return self._metadata_dataset.variables[var_name].dimensions
+
     def var_is_node_based(self, var_name: str) -> bool:
         """Check if a variable is node-based.
 
