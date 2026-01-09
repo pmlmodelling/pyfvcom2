@@ -318,12 +318,14 @@ class FVCOMInterpolator(Interpolator):
             self.fvcom_reader.grid.latc)
         return self._triangulation_elements_geographic
 
-    def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
+    def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str,
+                    extrapolate: Optional[bool] = False) -> np.ndarray:
         """Perform interpolation operation for FVCOM data.
 
         Args:
             coordinates (InterpolationCoordinates): Coordinates on the FVCOM grid.
             fvcom_var_name (str): Name of the FVCOM variable to interpolate.
+            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
 
         Returns:
             np.ndarray: Interpolated variable on the FVCOM grid.
@@ -340,25 +342,27 @@ class FVCOMInterpolator(Interpolator):
         # Route to appropriate interpolation method based on dimensions
         if not has_time and not has_depth:
             # Case 1: 2D time independent (e.g., bathymetry: [node] or [nele])
-            return self._interpolate_2d_static(coordinates, fvcom_var_name)
+            return self._interpolate_2d_static(coordinates, fvcom_var_name, extrapolate=extrapolate)
         elif has_time and not has_depth:
             # Case 2: 2D time dependent (e.g., zeta: [time, node])
-            return self._interpolate_2d_time_dependent(coordinates, fvcom_var_name)
+            return self._interpolate_2d_time_dependent(coordinates, fvcom_var_name, extrapolate=extrapolate)
         elif has_time and has_depth:
             # Case 3: 3D time dependent (e.g., temp: [time, siglay, node])
-            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name)
+            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, extrapolate=extrapolate)
         else:
             raise PyFVCOM2ValueError(
                 f"Unsupported variable dimensions for {fvcom_var_name}: {var_dims}"
             )
     
     def _interpolate_2d_static(self, coordinates: InterpolationCoordinates,
-                               fvcom_var_name: str) -> np.ndarray:
+                               fvcom_var_name: str,
+                               extrapolate: Optional[bool] = False) -> np.ndarray:
         """Interpolate a 2D time-independent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
+            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_points,).
@@ -379,37 +383,42 @@ class FVCOMInterpolator(Interpolator):
         interpolated_data[:] = interpolator(coordinates.x1, coordinates.x2)
 
         # Check for NaNs indicating out-of-bounds points. Fill these using nearest-neighbor
-        # interpolation and issue a warning.
-        nan_mask = np.isnan(interpolated_data)
-        if np.any(nan_mask):
-            nan_indices = np.where(nan_mask)[0]
-            nan_x1 = coordinates.x1[nan_indices]
-            nan_x2 = coordinates.x2[nan_indices]
-            print(
-                f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points.\n"
-                f"Points outside FVCOM grid coverage: "
-                f"{[(coord[0], coord[1]) for coord in zip(nan_x1[:1], nan_x2[:1])]}"
-            )
-            if len(nan_indices) > 1:
-                print(f" ... and {len(nan_indices) - 1} more points")
-            print("These will be filled using nearest-neighbor interpolation.")
+        # interpolation if extrapolate is True.
+        if not extrapolate:
+            return interpolated_data
+        else:
+            nan_mask = np.isnan(interpolated_data)
+            if np.any(nan_mask):
+                nan_indices = np.where(nan_mask)[0]
+                nan_x1 = coordinates.x1[nan_indices]
+                nan_x2 = coordinates.x2[nan_indices]
+                print(
+                    f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points.\n"
+                    f"Points outside FVCOM grid coverage: "
+                    f"{[(coord[0], coord[1]) for coord in zip(nan_x1[:1], nan_x2[:1])]}"
+                )
+                if len(nan_indices) > 1:
+                    print(f" ... and {len(nan_indices) - 1} more points")
+                print("These will be filled using nearest-neighbor interpolation.")
 
-            # Target points for interpolation
-            target_points = np.column_stack((coordinates.x1, coordinates.x2))
+                # Target points for interpolation
+                target_points = np.column_stack((coordinates.x1, coordinates.x2))
 
-            # Nearest-neighbor interpolator
-            nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, data)
-            interpolated_data[nan_indices] = nn_interpolator(target_points[nan_indices])            
+                # Nearest-neighbor interpolator
+                nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, data)
+                interpolated_data[nan_indices] = nn_interpolator(target_points[nan_indices])            
 
-        return interpolated_data
+            return interpolated_data
     
     def _interpolate_2d_time_dependent(self, coordinates: InterpolationCoordinates,
-                                       fvcom_var_name: str) -> np.ndarray:
+                                       fvcom_var_name: str,
+                                       extrapolate: Optional[bool] = False) -> np.ndarray:
         """Interpolate a 2D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
+            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_points).
@@ -444,6 +453,9 @@ class FVCOMInterpolator(Interpolator):
             interpolated_data[d_idx, :] = interpolator(coordinates.x1, coordinates.x2)
 
             # Check for NaN values indicating out-of-bounds points
+            if not extrapolate:
+                continue
+
             nan_mask = np.isnan(interpolated_data[d_idx, :])
             if np.any(nan_mask):
                 nan_indices = np.where(nan_mask)[0]
@@ -470,12 +482,14 @@ class FVCOMInterpolator(Interpolator):
         return interpolated_data
 
     def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates,
-                                       fvcom_var_name: str) -> np.ndarray:
+                                       fvcom_var_name: str,
+                                       extrapolate: Optional[bool] = False) -> np.ndarray:
         """Interpolate a 3D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
+            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_depths, n_points).
@@ -520,6 +534,9 @@ class FVCOMInterpolator(Interpolator):
             depth_on_target_horizontal_grid[i, :] = depth_interp(coordinates.x1, coordinates.x2)
 
             # Check for NaN values indicating out-of-bounds points
+            if not extrapolate:
+                continue
+
             nan_mask = np.isnan(depth_on_target_horizontal_grid[i, :])
             if np.any(nan_mask):
                 nan_indices = np.where(nan_mask)[0]
@@ -552,6 +569,9 @@ class FVCOMInterpolator(Interpolator):
                 var_on_target_horizontal_grid[i, :] = interp(coordinates.x1, coordinates.x2)
 
                 # Check for NaN values indicating out-of-bounds points
+                if not extrapolate:
+                    continue
+
                 nan_mask = np.isnan(var_on_target_horizontal_grid[i, :])
                 if np.any(nan_mask):
                     nan_indices = np.where(nan_mask)[0]
