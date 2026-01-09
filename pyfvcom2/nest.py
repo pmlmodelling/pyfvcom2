@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from datetime import datetime
+from typing import Optional
 
 from pyfvcom2.fvcom_writer import FVCOMWriter
 
@@ -12,6 +13,8 @@ from .grid import Grid, OpenBoundary
 from .grid import find_connected_elements
 from .coordinates import sigma_to_z_coords
 from .ocean import zbar
+from .exceptions import PyFVCOM2ValueError
+
 
 __all__ = ["GridBand", "Nest", "NestManager"]
 
@@ -302,29 +305,42 @@ class NestManager:
 
         return np.array(all_element_weights, dtype=np.float32)
 
-    def get_interpolation_coordinates(self, grid_position: str) -> InterpolationCoordinates:
+    def get_interpolation_coordinates(self, grid_position: str,
+                                      coordinate_system: Optional[str] = "geographic") -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
             grid_position: The grid position ('node' or 'element') for which to retrieve
             interpolation coordinates.
+            coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
         if grid_position not in ['node', 'element']:
-            raise ValueError("grid_position must be either 'node' or 'element'")
+          raise PyFVCOM2ValueError("grid_position must be either 'node' or 'element'")
+
+        if coordinate_system not in ["geographic", "cartesian"]:
+            raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
         if grid_position == 'node':
             indices = self.get_all_nest_nodes()
-            lons = self._grid_ref.lon_nodes[indices]
-            lats = self._grid_ref.lat_nodes[indices]
+            if coordinate_system == "geographic":
+                x1 = self._grid_ref.lon_nodes[indices]
+                x2 = self._grid_ref.lat_nodes[indices]
+            else:  # cartesian
+                x1 = self._grid_ref.x[indices]
+                x2 = self._grid_ref.y[indices]
             sigma_layers = self._grid_ref.sigma_layers_nodes[indices, :].T
             bathy = self._grid_ref.bathy_nodes[indices]
         else:  # grid_position == 'element'
             indices = self.get_all_nest_elements()
-            lons = self._grid_ref.lon_elements[indices]
-            lats = self._grid_ref.lat_elements[indices]
+            if coordinate_system == "geographic":
+                x1 = self._grid_ref.lon_elements[indices]
+                x2 = self._grid_ref.lat_elements[indices]
+            else:  # cartesian
+                x1 = self._grid_ref.xc[indices]
+                x2 = self._grid_ref.yc[indices]
             sigma_layers = self._grid_ref.sigma_layers_elements[indices, :].T
             bathy = self._grid_ref.bathy_elements[indices]
 
@@ -334,9 +350,9 @@ class NestManager:
         zeta = np.zeros_like(bathy)
 
         # Compute depths
-        depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
+        x3 = sigma_to_z_coords(sigma_layers, zeta, bathy)
 
-        return InterpolationCoordinates(self._dates, depths, lats, lons)
+        return InterpolationCoordinates(self._dates, x3, x2, x1, coordinate_system=coordinate_system)
 
     def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, grid_position: str) -> None:
         """ Add forcing data for the nests
