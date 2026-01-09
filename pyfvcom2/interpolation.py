@@ -107,7 +107,7 @@ class CMEMSInterpolator(Interpolator):
 
         # Determine the number of dates and points
         n_dates = len(dates)
-        n_points = len(coordinates.lons)
+        n_points = len(coordinates.x1)
 
         # Initialise array to hold interpolated data
         interpolated_data = np.empty((n_dates, n_points), dtype=np.float32)
@@ -121,7 +121,7 @@ class CMEMSInterpolator(Interpolator):
         tri = Delaunay(source_points)
         
         # Target points for interpolation
-        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+        target_points = np.column_stack((coordinates.x1, coordinates.x2))
 
         # Loop over each time index to perform interpolation
         for d_idx, target_date in enumerate(dates):
@@ -137,7 +137,7 @@ class CMEMSInterpolator(Interpolator):
             interpolated_data[d_idx, :] = interpolator(target_points)
             
             # Check for NaN values indicating out-of-bounds points
-            # TODO - Might there be situations when one wants to fill the NaNs
+            # NB - Might there be situations when one wants to fill the NaNs
             # using, e.g., nearest-neighbor interpolation? NB the method is already
             # interpolating over masked internal points, so this would only apply
             # for points that also sit outside the convex hull of the unstructured
@@ -180,8 +180,8 @@ class CMEMSInterpolator(Interpolator):
 
         # Determine the number of dates and points
         n_dates = len(dates)
-        n_depths = coordinates.depths.shape[0]
-        n_points = coordinates.lons.shape[0]
+        n_depths = coordinates.x3.shape[0]
+        n_points = coordinates.x1.shape[0]
 
         # Loop over each time index to perform interpolation
         interpolated_data = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
@@ -203,14 +203,14 @@ class CMEMSInterpolator(Interpolator):
                 interp = interpolate.RegularGridInterpolator(
                     (self.cmems_reader.lons, self.cmems_reader.lats), layer_data.T
                 )
-                var_on_fvcom_horizontal_grid[depth_index, :] = interp((coordinates.lons, coordinates.lats))
+                var_on_fvcom_horizontal_grid[depth_index, :] = interp((coordinates.x1, coordinates.x2))
 
             # Next, interpolate onto the FVCOM vertical sigma layers for each horizontal point
             var_on_fvcom_grid = np.empty((n_depths, n_points), dtype=var_filled.dtype)
 
             for i in range(n_points):
                 var_profile = var_on_fvcom_horizontal_grid[:, i]
-                target_depths = coordinates.depths[:, i]
+                target_depths = coordinates.x3[:, i]
 
                 interp = interpolate.interp1d(
                     self.cmems_reader.depth_levels,
@@ -240,7 +240,7 @@ class FVCOMInterpolator(Interpolator):
     scipy's LinearNDInterpolator. However, this could be extended in future to support other methods.
 
     Further notes:
-    - In nested FVCOM grids, the elements are identical in the overlap zone, meaning there is no no
+    - In nested FVCOM grids, the elements are identical in the overlap zone, meaning there is no
     need to interpolate from one grid to another. Instead, one can simply extract the data from the
     parent grid at the locations of the child grid nodes/elements.
     - For node-based variables (e.g., zeta, h), interpolation is performed using the grid nodes. We use
@@ -252,7 +252,7 @@ class FVCOMInterpolator(Interpolator):
     the interpolated output and filling them using nearest-neighbor interpolation. A warning is issued when
     this occurs.
     - Once data has been interpolated onto all horizontal surfaces of the input grid, we then interpolate
-    vertically onto the supplie depth levels.
+    vertically onto the supplied depth levels.
     - Options to parallelise the interpolation step are included.
 
     Args:
@@ -264,17 +264,58 @@ class FVCOMInterpolator(Interpolator):
 
         self.fvcom_reader = fvcom_reader
 
-        # For node based data, create triangulation for FVCOM grid nodes based on
-        # nv connectivity array
-        self.triangulation_nodes = Triangulation(
-            fvcom_reader.grid.x,
-            fvcom_reader.grid.y,
-            triangles=fvcom_reader.grid.triangles)
+        # These are created through lazy initialisation. Note for
+        # element based data, form a new triangulation based on element centroids
+        self._triangulation_nodes_cartesian = None
+        self._triangulation_nodes_geographic = None
+        self._triangulation_elements_cartesian = None
+        self._triangulation_elements_geographic = None
 
-        # For element based data, form a new triangulation based on element centroids
-        self.triangulation_elements = Triangulation(
-            fvcom_reader.grid.xc,
-            fvcom_reader.grid.yc)
+    @property
+    def triangulation_nodes_cartesian(self):
+        """Triangulation for FVCOM grid nodes in cartesian coordinates."""
+        if self._triangulation_nodes_cartesian is not None:
+            return self._triangulation_nodes_cartesian
+
+        self._triangulation_nodes_cartesian = Triangulation(
+            self.fvcom_reader.grid.x,
+            self.fvcom_reader.grid.y,
+            triangles=self.fvcom_reader.grid.triangles)
+        return self._triangulation_nodes_cartesian
+
+    @property
+    def triangulation_nodes_geographic(self):
+        """Triangulation for FVCOM grid nodes in geographic coordinates."""
+        if self._triangulation_nodes_geographic is not None:
+            return self._triangulation_nodes_geographic
+
+        self._triangulation_nodes_geographic = Triangulation(
+            self.fvcom_reader.grid.lon,
+            self.fvcom_reader.grid.lat,
+            triangles=self.fvcom_reader.grid.triangles)
+        return self._triangulation_nodes_geographic
+
+    @property
+    def triangulation_elements_cartesian(self):
+        """Triangulation for FVCOM grid elements in cartesian coordinates."""
+        if self._triangulation_elements_cartesian is not None:
+            return self._triangulation_elements_cartesian
+
+        self._triangulation_elements_cartesian = Triangulation(
+            self.fvcom_reader.grid.xc,
+            self.fvcom_reader.grid.yc)
+        return self._triangulation_elements_cartesian
+
+    @property
+    def triangulation_elements_geographic(self):
+        """Triangulation for FVCOM grid elements in geographic coordinates."""
+        if self._triangulation_elements_geographic is not None:
+            return self._triangulation_elements_geographic
+
+        self._triangulation_elements_geographic = Triangulation(
+            self.fvcom_reader.grid.lonc,
+            self.fvcom_reader.grid.latc)
+        return self._triangulation_elements_geographic
 
     def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
         """Perform interpolation operation for FVCOM data.
@@ -328,20 +369,20 @@ class FVCOMInterpolator(Interpolator):
         Returns:
             np.ndarray: Interpolated variable data with shape (n_points,).
         """
-        n_points = len(coordinates.lons)
+        n_points = len(coordinates.x1)
 
         # Initialise array to hold interpolated data
         interpolated_data = np.empty((n_points), dtype=np.float32)
 
         # Target points for interpolation
-        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+        target_points = np.column_stack((coordinates.x1, coordinates.x2))
 
         # FVCOM data for interpolation
         data = self.fvcom_reader.get_var(fvcom_var_name)
 
         # Create interpolator
         var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
-        interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, data)
+        interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, data)
 
         # Interpolate
         interpolated_data[:] = interpolator(target_points)
@@ -387,13 +428,13 @@ class FVCOMInterpolator(Interpolator):
 
         # Determine the number of dates and points
         n_dates = len(dates)
-        n_points = len(coordinates.lons)
+        n_points = len(coordinates.x1)
 
         # Initialise array to hold interpolated data
         interpolated_data = np.empty((n_dates, n_points), dtype=np.float32)
 
         # Target points for interpolation
-        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+        target_points = np.column_stack((coordinates.x1, coordinates.x2))
 
         # Is the variable node or element based?
         var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
@@ -406,7 +447,7 @@ class FVCOMInterpolator(Interpolator):
             data = self.fvcom_reader.get_var_at_time(fvcom_var_name, target_date)
 
             # Create interpolator
-            interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, data)
+            interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, data)
 
             interpolated_data[d_idx, :] = interpolator(target_points)
 
@@ -431,7 +472,8 @@ class FVCOMInterpolator(Interpolator):
 
         return interpolated_data
 
-    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
+    def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates,
+                                       fvcom_var_name: str) -> np.ndarray:
         """Interpolate a 3D time-dependent FVCOM variable.
         
         Args:
@@ -449,8 +491,8 @@ class FVCOMInterpolator(Interpolator):
 
         # Determine the number of dates, depths and points we will interpolate to
         n_dates = len(dates)
-        n_depths = coordinates.depths.shape[0]
-        n_points = coordinates.lons.shape[0]
+        n_depths = coordinates.x3.shape[0]
+        n_points = coordinates.x1.shape[0]
 
         # The number of depths in the FVCOM data (variable dependent)
         n_depths_fvcom = self.fvcom_reader.get_n_z_levels(fvcom_var_name)
@@ -459,7 +501,7 @@ class FVCOMInterpolator(Interpolator):
         var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
 
         # Target points for interpolation
-        target_points = np.column_stack((coordinates.lons, coordinates.lats))
+        target_points = np.column_stack((coordinates.x1, coordinates.x2))
 
         # Depth interpolation 
         # -------------------
@@ -475,7 +517,7 @@ class FVCOMInterpolator(Interpolator):
         )
         
         for i in range(n_depths_fvcom):
-            depth_interp = self._get_linear_interpolator_for_variable(var_is_node_based, fvcom_depths[i,:])
+            depth_interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, fvcom_depths[i,:])
 
             depth_on_target_horizontal_grid[i, :] = depth_interp(target_points)
 
@@ -507,7 +549,7 @@ class FVCOMInterpolator(Interpolator):
             )
 
             for i in range(n_depths_fvcom):
-                interp = self._get_linear_interpolator_for_variable(var_is_node_based, fvcom_var[i, :])
+                interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, fvcom_var[i, :])
 
                 var_on_target_horizontal_grid[i, :] = interp(target_points)
 
@@ -541,7 +583,7 @@ class FVCOMInterpolator(Interpolator):
                     bounds_error=False,
                     fill_value="extrapolate",
                 )
-                target_depths = coordinates.depths[:, i]
+                target_depths = coordinates.x3[:, i]
                 var_on_target_grid[:, i] = interp(target_depths)
 
             interpolated_var[d_idx, :, :] = var_on_target_grid
@@ -549,11 +591,13 @@ class FVCOMInterpolator(Interpolator):
         return interpolated_var
 
     def _get_linear_interpolator_for_variable(self, var_is_node_based: bool,
+                                              coordinate_system: str,
                                               data: np.ndarray) -> LinearNDInterpolator:
         """Get the appropriate linear interpolator based on whether the variable is node or element based.
         
         Args:
             var_is_node_based (bool): True if the variable is node based, False if element based.
+            coordinate_system (str): The coordinate system of the data ('geographic' or 'cartesian').
             data (np.ndarray): Data array for the variable.
         Returns:
             LinearNDInterpolator: The interpolator object.
@@ -561,10 +605,16 @@ class FVCOMInterpolator(Interpolator):
         # Determine if variable is node or element based
         if var_is_node_based:
             # Node based variable
-            triangulation = self.triangulation_nodes
+            if coordinate_system == "geographic":
+                triangulation = self.triangulation_nodes_geographic
+            else:
+                triangulation = self.triangulation_nodes_cartesian
         else:
             # Element based variable
-            triangulation = self.triangulation_elements
+            if coordinate_system == "geographic":
+                triangulation = self.triangulation_elements_geographic
+            else:
+                triangulation = self.triangulation_elements_cartesian
         
         # Create interpolator
         interpolator = LinearNDInterpolator(
