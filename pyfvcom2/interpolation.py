@@ -382,33 +382,12 @@ class FVCOMInterpolator(Interpolator):
         # Interpolate
         interpolated_data[:] = interpolator(coordinates.x1, coordinates.x2)
 
-        # Check for NaNs indicating out-of-bounds points. Fill these using nearest-neighbor
-        # interpolation if extrapolate is True.
-        if not extrapolate:
-            return interpolated_data
-        else:
-            nan_mask = np.isnan(interpolated_data)
-            if np.any(nan_mask):
-                nan_indices = np.where(nan_mask)[0]
-                nan_x1 = coordinates.x1[nan_indices]
-                nan_x2 = coordinates.x2[nan_indices]
-                print(
-                    f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points.\n"
-                    f"Points outside FVCOM grid coverage: "
-                    f"{[(coord[0], coord[1]) for coord in zip(nan_x1[:1], nan_x2[:1])]}"
-                )
-                if len(nan_indices) > 1:
-                    print(f" ... and {len(nan_indices) - 1} more points")
-                print("These will be filled using nearest-neighbor interpolation.")
+        # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
+        if extrapolate:
+            target_points = np.column_stack((coordinates.x1, coordinates.x2))
+            self._fill_nans_nearest_neighbor(interpolated_data, target_points, var_is_node_based, data)
 
-                # Target points for interpolation
-                target_points = np.column_stack((coordinates.x1, coordinates.x2))
-
-                # Nearest-neighbor interpolator
-                nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, data)
-                interpolated_data[nan_indices] = nn_interpolator(target_points[nan_indices])            
-
-            return interpolated_data
+        return interpolated_data
     
     def _interpolate_2d_time_dependent(self, coordinates: InterpolationCoordinates,
                                        fvcom_var_name: str,
@@ -452,32 +431,12 @@ class FVCOMInterpolator(Interpolator):
 
             interpolated_data[d_idx, :] = interpolator(coordinates.x1, coordinates.x2)
 
-            # Check for NaN values indicating out-of-bounds points
-            if not extrapolate:
-                continue
-
-            nan_mask = np.isnan(interpolated_data[d_idx, :])
-            if np.any(nan_mask):
-                nan_indices = np.where(nan_mask)[0]
-                nan_x1 = coordinates.x1[nan_indices]
-                nan_x2 = coordinates.x2[nan_indices]
-                print(
-                    f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points "
-                    f"at time {target_date}.\n"
-                    f"Points outside FVCOM grid coverage: "
-                    f"{[(coord[0], coord[1]) for coord in zip(nan_x1[:1], nan_x2[:1])]}"
-                )
-                if len(nan_indices) > 1:
-                    print(f" ... and {len(nan_indices) - 1} more points")
-
-                print("These will be filled using nearest-neighbor interpolation.")
-
-                # Target points for interpolation
+            # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
+            if extrapolate:
                 target_points = np.column_stack((coordinates.x1, coordinates.x2))
-
-                # Nearest-neighbor interpolator
-                nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, data)
-                interpolated_data[d_idx, nan_indices] = nn_interpolator(target_points[nan_indices])
+                self._fill_nans_nearest_neighbor(interpolated_data[d_idx, :], target_points,
+                                                 var_is_node_based, data,
+                                                 context_msg=f"at time {target_date}")
 
         return interpolated_data
 
@@ -533,18 +492,10 @@ class FVCOMInterpolator(Interpolator):
 
             depth_on_target_horizontal_grid[i, :] = depth_interp(coordinates.x1, coordinates.x2)
 
-            # Check for NaN values indicating out-of-bounds points
-            if not extrapolate:
-                continue
-
-            nan_mask = np.isnan(depth_on_target_horizontal_grid[i, :])
-            if np.any(nan_mask):
-                nan_indices = np.where(nan_mask)[0]
-                nan_coords = target_points[nan_indices]
-
-                # Nearest-neighbor interpolator
-                nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, fvcom_depths[i,:])
-                depth_on_target_horizontal_grid[i, nan_indices] = nn_interpolator(nan_coords)
+            # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
+            if extrapolate:
+                self._fill_nans_nearest_neighbor(depth_on_target_horizontal_grid[i, :], target_points,
+                                                 var_is_node_based, fvcom_depths[i, :], warn=False)
 
         # Variable interpolation
         # ----------------------
@@ -568,28 +519,11 @@ class FVCOMInterpolator(Interpolator):
 
                 var_on_target_horizontal_grid[i, :] = interp(coordinates.x1, coordinates.x2)
 
-                # Check for NaN values indicating out-of-bounds points
-                if not extrapolate:
-                    continue
-
-                nan_mask = np.isnan(var_on_target_horizontal_grid[i, :])
-                if np.any(nan_mask):
-                    nan_indices = np.where(nan_mask)[0]
-                    nan_coords = target_points[nan_indices]
-                    print(
-                        f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points "
-                        f"at depth index {i} and time {target_date}.\n"
-                        f"Points outside FVCOM grid coverage: "
-                        f"{[(coord[0], coord[1]) for coord in nan_coords[:1]]}. "
-                    )
-                    if len(nan_indices) > 1:
-                        print(f" ... and {len(nan_indices) - 1} more points")
-
-                    print(f"These will be filled using nearest-neighbor interpolation.")
-                    
-                    # Nearest-neighbor interpolator
-                    nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, fvcom_var[i, :])
-                    var_on_target_horizontal_grid[i, nan_indices] = nn_interpolator(nan_coords)
+                # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
+                if extrapolate:
+                    self._fill_nans_nearest_neighbor(var_on_target_horizontal_grid[i, :], target_points,
+                                                     var_is_node_based, fvcom_var[i, :],
+                                                     context_msg=f"at depth index {i} and time {target_date}")
 
             # Next, interpolate onto depth levels of each vertical point
             var_on_target_grid = np.empty((n_depths, n_points), dtype=fvcom_var.dtype)
@@ -642,6 +576,39 @@ class FVCOMInterpolator(Interpolator):
         )
         
         return interpolator
+
+    def _fill_nans_nearest_neighbor(self, interpolated_data: np.ndarray, target_points: np.ndarray,
+                                    var_is_node_based: bool, source_data: np.ndarray,
+                                    warn: bool = True, context_msg: str = "") -> None:
+        """Check for NaN values in interpolated data and fill using nearest-neighbor interpolation.
+
+        Args:
+            interpolated_data: 1D array of interpolated values (modified in-place).
+            target_points: 2D array of target point coordinates, shape (n_points, 2).
+            var_is_node_based: Whether the variable is node-based.
+            source_data: Source data array for building the nearest-neighbor interpolator.
+            warn: Whether to print a warning message when NaN values are found.
+            context_msg: Additional context appended to the warning (e.g. "at time 2024-01-01").
+        """
+        nan_mask = np.isnan(interpolated_data)
+        if not np.any(nan_mask):
+            return
+
+        nan_indices = np.where(nan_mask)[0]
+
+        if warn:
+            context = f" {context_msg}" if context_msg else ""
+            print(
+                f"Warning: Out-of-bounds interpolation detected for {len(nan_indices)} points{context}.\n"
+                f"Points outside FVCOM grid coverage: "
+                f"{[(coord[0], coord[1]) for coord in target_points[nan_indices][:1]]}"
+            )
+            if len(nan_indices) > 1:
+                print(f" ... and {len(nan_indices) - 1} more points")
+            print("These will be filled using nearest-neighbor interpolation.")
+
+        nn_interpolator = self._get_nn_interpolator_for_variable(var_is_node_based, source_data)
+        interpolated_data[nan_indices] = nn_interpolator(target_points[nan_indices])
 
     def _get_nn_interpolator_for_variable(self, var_is_node_based: bool,
                                           data: np.ndarray) -> NearestNDInterpolator:
