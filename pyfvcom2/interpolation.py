@@ -536,17 +536,11 @@ class FVCOMInterpolator(Interpolator):
                     target_datetime=target_date,
                     relative_to_free_surface=True
                 )
-                # Create a mask for all depths that are above the free surface (i.e., where depth is positive).
-                # This will be used to mask out these points during vertical interpolation.
-                above_surface_mask = fvcom_depths > 0
 
             else: # sigma coordinates
                 # Interpolation to be done in sigma coordinates. Typically, sigma coordinates
                 # do not vary horizontally, but we allow for it here. They do not vary in time.
                 fvcom_depths = self.fvcom_reader.get_sigma_levels(fvcom_var_name)
-
-                # No mask here, as all sigma levels are valid for interpolation
-                above_surface_mask = np.zeros_like(fvcom_depths, dtype=bool)
 
             # Array holding variable data interpolated onto the new horizontal grid at each
             # FVCOM depth level
@@ -578,6 +572,15 @@ class FVCOMInterpolator(Interpolator):
                                                      var_is_node_based, fvcom_var[i, :],
                                                      context_msg=f"at depth index {i} and time {target_date}")
 
+            # Calculate depth mask
+            if coordinates.vertical_coordinate_system == 'z':
+                above_surface_mask = depth_on_target_horizontal_grid > 0
+            else:
+                above_surface_mask = np.zeros_like(depth_on_target_horizontal_grid, dtype=bool)
+            
+            # Take top slice of mask
+            above_surface_mask = above_surface_mask[0, :]
+
             # Next, interpolate onto depth levels of each vertical point
             var_on_target_grid = np.empty((n_depths, n_points), dtype=fvcom_var.dtype)
 
@@ -598,7 +601,7 @@ class FVCOMInterpolator(Interpolator):
 
             # Apply above surface mask to interpolated variable (only relevant for interpolation in z coordinates)
             if coordinates.vertical_coordinate_system == 'z':
-                var_on_target_grid[above_surface_mask[:]] = np.nan
+                var_on_target_grid[:, above_surface_mask] = np.nan
 
             interpolated_var[d_idx, :, :] = var_on_target_grid
 
@@ -640,7 +643,7 @@ class FVCOMInterpolator(Interpolator):
 
     def _fill_nans_nearest_neighbor(self, interpolated_data: np.ndarray, target_points: np.ndarray,
                                     var_is_node_based: bool, source_data: np.ndarray,
-                                    warn: bool = True, context_msg: str = "") -> None:
+                                    warn: bool = False, context_msg: str = "") -> None:
         """Check for NaN values in interpolated data and fill using nearest-neighbor interpolation.
 
         Args:
