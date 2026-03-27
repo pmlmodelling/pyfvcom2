@@ -47,6 +47,7 @@ class FVCOMReader:
         self._metadata_dataset = Dataset(self.file_paths[0])
 
         self._grid = None  # Lazy initialization
+        self._z_level_cache = {}  # Cache for time-dependent z levels
 
         # Build the time index mapping for multiple files
         self._build_time_index_mapping()
@@ -350,19 +351,29 @@ class FVCOMReader:
 
         vertical_position = self.get_vertical_position(var_name)
 
+        # Check cache
+        cache_key = (var_is_node_based, vertical_position, target_datetime)
+        if cache_key in self._z_level_cache:
+            return self._z_level_cache[cache_key]
+
         zeta = self.get_var(zeta_var_name, target_datetime=target_datetime, tolerance=tolerance)
 
         if var_is_node_based:
             h = self.grid.bathy_nodes
             if vertical_position == 'layer_centre':
-                return sigma_to_z_coords(self.grid.sigma_layers, h, zeta)
+                result = sigma_to_z_coords(self.grid.sigma_layers, h, zeta)
+            else:
+                result = sigma_to_z_coords(self.grid.sigma_levels, h, zeta)
         else:
             zeta = nodes2elems(zeta, self.grid.triangles)
             h = self.grid.bathy_elements
             if vertical_position == 'layer_centre':
-                return sigma_to_z_coords(self.grid.sigmac_layers, h, zeta)
+                result = sigma_to_z_coords(self.grid.sigmac_layers, h, zeta)
             else:
-                return sigma_to_z_coords(self.grid.sigmac_levels, h, zeta)
+                result = sigma_to_z_coords(self.grid.sigmac_levels, h, zeta)
+
+        self._z_level_cache[cache_key] = result
+        return result
 
     def get_n_depth_levels(self, var_name: str) -> int:
         """Get number of z levels/layers
