@@ -345,8 +345,8 @@ class FVCOMReader:
         else:
             return self.grid.n_sigma_levels
 
-    def get_interpolation_coordinates(self, grid_position: str,
-                                      sigma_type: Optional[str] = 'layer',
+    def get_interpolation_coordinates(self, horizontal_position: str,
+                                      vertical_position: Optional[str] = 'layer_centre',
                                       coordinate_system: Optional[str] = "geographic",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
@@ -354,17 +354,17 @@ class FVCOMReader:
         Wrapper for Grid.get_interpolation_coordinates.
 
         Args:
-            grid_position: The grid position ('node' or 'element') for which to retrieve
-            interpolation coordinates.
-            sigma_type: The type of sigma coordinate ('layer' or 'levels') to use for depth calculation.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
+            vertical_position: Whether depth coordinates are at layer centres or layer interfaces
+                ('layer_centre' or 'layer_interface').
             coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation
-            coordinates.
+                coordinates.
             dates: Optional array of datetime objects for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
-        return self.grid.get_interpolation_coordinates(grid_position, sigma_type=sigma_type,
+        return self.grid.get_interpolation_coordinates(horizontal_position, vertical_position=vertical_position,
                                                        coordinate_system=coordinate_system,
                                                        dates=dates)
 

@@ -243,53 +243,55 @@ class Grid:
         self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
 
         # Depth levels in z coordinates
-        self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
-        self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
-        self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
-        self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
+        # TODO - what to do about these when h or hc is negative? I.e., the depth of the water
+        # is heigher than the zero geoid.
+        #self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
+        #self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
+        #self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
+        #self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
 
-    def get_interpolation_coordinates(self, grid_position: str, sigma_type: Optional[str] = None,
+    def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: Optional[str] = None,
                                       coordinate_system: str = "geographic",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
-            grid_position: The grid position ('node' or 'element') for which to retrieve
-                interpolation coordinates.
-            sigma_type: The type of sigma coordinate ('layers' or 'levels'). If None, defaults to 'layers'.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
+            vertical_position: Whether depth coordinates are at layer centres or layer interfaces
+                ('layer_centre' or 'layer_interface'). If None, defaults to 'layer_centre'.
             coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
             dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
-        if grid_position not in ['node', 'element']:
-            raise PyFVCOM2ValueError("grid_position must be either 'node' or 'element'")
+        if horizontal_position not in ['node', 'element']:
+            raise PyFVCOM2ValueError("horizontal_position must be either 'node' or 'element'")
 
         if coordinate_system not in ['geographic', 'cartesian']:
             raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
-        if grid_position == 'node':
+        if horizontal_position == 'node':
             if coordinate_system == 'geographic':
                 x1 = self.lon_nodes
                 x2 = self.lat_nodes
             else:  # cartesian
                 x1 = self.x
                 x2 = self.y
-            if sigma_type == 'levels':
+            if vertical_position == 'layer_interface':
                 x3 = self.sigma_levels_z.T
-            else:  # Default to 'layers'    
+            else:  # Default to 'layer_centre'
                 x3 = self.sigma_layers_z.T
-        else:  # grid_position == 'element'
+        else:  # horizontal_position == 'element'
             if coordinate_system == 'geographic':
                 x1 = self.lon_elements
                 x2 = self.lat_elements
             else:  # cartesian
                 x1 = self.xc
                 x2 = self.yc
-            if sigma_type == 'levels':
+            if vertical_position == 'layer_interface':
                 x3 = self.sigmac_levels_z.T
-            else:  # Default to 'layers'    
+            else:  # Default to 'layer_centre'
                 x3 = self.sigmac_layers_z.T
 
         # Use provided dates or empty array

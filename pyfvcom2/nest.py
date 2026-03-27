@@ -305,27 +305,27 @@ class NestManager:
 
         return np.array(all_element_weights, dtype=np.float32)
 
-    def get_interpolation_coordinates(self, grid_position: str,
-                                      sigma_type: Optional[str] = 'layer',
+    def get_interpolation_coordinates(self, horizontal_position: str,
+                                      vertical_position: Optional[str] = 'layer_centre',
                                       coordinate_system: Optional[str] = "geographic") -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
-            grid_position: The grid position ('node' or 'element') for which to retrieve
-            interpolation coordinates.
-            sigma_type: The type of sigma coordinate ('layer' or 'levels') to use for depth calculation.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
+            vertical_position: Whether depth coordinates are at layer centres or layer interfaces
+                ('layer_centre' or 'layer_interface').
             coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
-        if grid_position not in ['node', 'element']:
-          raise PyFVCOM2ValueError("grid_position must be either 'node' or 'element'")
+        if horizontal_position not in ['node', 'element']:
+          raise PyFVCOM2ValueError("horizontal_position must be either 'node' or 'element'")
 
         if coordinate_system not in ["geographic", "cartesian"]:
             raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
-        if grid_position == 'node':
+        if horizontal_position == 'node':
             indices = self.get_all_nest_nodes()
             if coordinate_system == "geographic":
                 x1 = self._grid_ref.lon_nodes[indices]
@@ -333,11 +333,11 @@ class NestManager:
             else:  # cartesian
                 x1 = self._grid_ref.x[indices]
                 x2 = self._grid_ref.y[indices]
-            if sigma_type == 'levels':
+            if vertical_position == 'layer_interface':
                 x3 = self.sigma_levels_z[indices, :].T
-            else:  # Default to 'layers'    
+            else:  # Default to 'layer_centre'
                 x3 = self.sigma_layers_z[indices, :].T
-        else:  # grid_position == 'element'
+        else:  # horizontal_position == 'element'
             indices = self.get_all_nest_elements()
             if coordinate_system == "geographic":
                 x1 = self._grid_ref.lon_elements[indices]
@@ -345,22 +345,22 @@ class NestManager:
             else:  # cartesian
                 x1 = self._grid_ref.xc[indices]
                 x2 = self._grid_ref.yc[indices]
-            if sigma_type == 'levels':
+            if vertical_position == 'layer_interface':
                 x3 = self.sigmac_levels_z[indices, :].T
-            else:  # Default to 'layers'    
+            else:  # Default to 'layer_centre'
                 x3 = self.sigmac_layers_z[indices, :].T
 
         return InterpolationCoordinates(self._dates, x3, x2, x1, coordinate_system=coordinate_system)
 
-    def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, grid_position: str) -> None:
+    def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, horizontal_position: str) -> None:
         """ Add forcing data for the nests
 
         Args:
             interpolator: Interpolator instance to use for interpolation.
             fvcom_var_name: FVCOM name for the forcing variable.
-            grid_position: The grid position ('node' or 'element') for which to add forcing data.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
         """
-        interpolation_coords = self.get_interpolation_coordinates(grid_position)
+        interpolation_coords = self.get_interpolation_coordinates(horizontal_position)
         forcing_data = interpolator.interpolate(interpolation_coords, fvcom_var_name)
         self._forcing_data[fvcom_var_name] = forcing_data
 
