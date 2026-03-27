@@ -10,7 +10,7 @@ from cftime import num2pydate
 
 from .interpolation_coordinates import InterpolationCoordinates
 from .coordinates import sigma_to_z_coords
-from .grid import Grid
+from .grid import Grid, nodes2elems
 from .mesh_reader import MeshData
 from .sigma_reader import SigmaData
 from .date_utils import round_time
@@ -253,19 +253,19 @@ class FVCOMReader:
                 f"Variable {var_name} is neither node-based nor element-based."
             )
 
-    def get_sigma_type(self, var_name: str) -> str:
+    def get_vertical_position(self, var_name: str) -> str:
         """Get the sigma coordinate type for a variable.
 
         Args:
             var_name (str): The name of the variable.
         Returns:
-            str: 'siglay' if the variable uses sigma layers, 'siglev' if it uses sigma levels.
+            str: 'layer_centre' if the variable uses sigma layers, 'layer_interface' if it uses sigma levels.
         """
         var_dims = self._metadata_dataset.variables[var_name].dimensions
         if 'siglay' in var_dims:
-            return 'siglay'
+            return 'layer_centre'
         elif 'siglev' in var_dims:
-            return 'siglev'
+            return 'layer_interface'
         else:
             return None
 
@@ -307,30 +307,64 @@ class FVCOMReader:
         return np.ma.getdata(var)
         
     def get_z_levels(self, var_name: str) -> np.ndarray:
-        """Get z levels/layers for the variable based on whether it is node or element based.
-        
+        """Get static z levels/layers for the variable
+
+        Returns static z levels while assuming zeta is zero. If you want time
+        varying z levels, use the function get_time_dep_z_levels instead.
+
         Args:
             var_name (str): The name of the variable.
         
+        Returns:
+            np.ndarray: Static z coordinates array
+        """
+        var_is_node_based = self.var_is_node_based(var_name)
+
+        vertical_position = self.get_vertical_position(var_name)
+
+        if var_is_node_based:
+            if vertical_position == 'layer_centre':
+                return self.grid.z_layers_static.T
+            else:
+                return self.grid.z_levels_static.T
+        else:
+            if vertical_position == 'layer_centre':
+                return self.grid.zc_layers_static.T
+            else:
+                return self.grid.zc_levels_static.T
+
+    def get_time_dep_z_levels(self, var_name: str, target_datetime: datetime=None,
+                              tolerance: Optional[timedelta]=None, zeta_var_name: str='zeta') -> np.ndarray:
+        """Get time-dependent z levels/layers for the variable based on whether it is node or element based.
+
+        Args:
+            var_name (str): The name of the variable.
+            target_datetime (datetime): The target datetime for which to retrieve the z levels.
+            tolerance (timedelta, optional): The tolerance for matching the target datetime.
+            zeta_var_name (str, optional): The name of the zeta (ssh) variable. Defaults to 'zeta'.
+
         Returns:
             np.ndarray: Sigma levels array.
         """
         var_is_node_based = self.var_is_node_based(var_name)
 
-        sigma_type = self.get_sigma_type(var_name)
+        vertical_position = self.get_vertical_position(var_name)
+
+        zeta = self.get_var(zeta_var_name, target_datetime=target_datetime, tolerance=tolerance)
 
         if var_is_node_based:
-            if sigma_type == 'siglay':
-                return self.grid.sigma_layers_z.T
-            else:
-                return self.grid.sigma_levels_z.T
+            h = self.grid.bathy_nodes
+            if vertical_position == 'layer_centre':
+                return sigma_to_z_coords(self.grid.sigma_layers, h, zeta)
         else:
-            if sigma_type == 'siglay':
-                return self.grid.sigmac_layers_z.T
+            zeta = nodes2elems(zeta, self.grid.triangles)
+            h = self.grid.bathy_elements
+            if vertical_position == 'layer_centre':
+                return sigma_to_z_coords(self.grid.sigmac_layers, h, zeta)
             else:
-                return self.grid.sigmac_levels_z.T
+                return sigma_to_z_coords(self.grid.sigmac_levels, h, zeta)
 
-    def get_n_z_levels(self, var_name: str) -> int:
+    def get_n_depth_levels(self, var_name: str) -> int:
         """Get number of z levels/layers
         
         Args:
@@ -339,8 +373,8 @@ class FVCOMReader:
         Returns:
             int: Number of sigma levels/layers.
         """
-        sigma_type = self.get_sigma_type(var_name)
-        if sigma_type == 'siglay':
+        vertical_position = self.get_vertical_position(var_name)
+        if vertical_position == 'layer_centre':
             return self.grid.n_sigma_layers
         else:
             return self.grid.n_sigma_levels
@@ -397,7 +431,7 @@ class FVCOMReader:
         """
         # Generate "dummy" sigma configuration
         sigma_config = {
-            'sigma_type': 'dummy',  # Assume generalised coordinates
+            'sigtype': 'dummy',  # Assume generalised coordinates
             'sigma_power': np.nan,
             'sigma_theta': np.nan,
             'sigma_b': np.nan
