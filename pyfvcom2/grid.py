@@ -242,13 +242,18 @@ class Grid:
         self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
         self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
 
-        # Depth levels in z coordinates
-        # TODO - what to do about these when h or hc is negative? I.e., the depth of the water
-        # is heigher than the zero geoid.
-        #self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
-        #self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
-        #self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
-        #self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
+        # Compute static z coordinates for sigma levels and layers, which can be used
+        # when interpolating data onto FVCOM's grid. We assume a value of zero for zeta
+        # and generate a set of "corrected" values for the bathymetry by replacing all
+        # negative h values (indicating a position above the zero geoid, which is most-likely
+        # intertidal) with a value of 1 m. When interpolating from coarse cmems data, for example,
+        # this ensures we can fill data arrays with sensible values.
+        bathy_nodes_corrected = np.where(self.h < 0, 1.0, self.h)
+        bathy_elements_corrected = np.where(self.hc < 0, 1.0, self.hc)
+        self.z_layers_static = bathy_nodes_corrected[:, np.newaxis] * self.sigma_layers
+        self.zc_layers_static = bathy_elements_corrected[:, np.newaxis] * self.sigmac_layers
+        self.z_levels_static = bathy_nodes_corrected[:, np.newaxis] * self.sigma_levels
+        self.zc_levels_static = bathy_elements_corrected[:, np.newaxis] * self.sigmac_levels
 
     def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: str,
                                       horizontal_coordinate_system: str = "geographic",
@@ -288,12 +293,12 @@ class Grid:
                 x2 = self.y
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
-                    x3 = self.sigma_levels_z.T
+                    x3 = self.z_levels_static.T
                 else:  # 'sigma'
                     x3 = self.sigma_levels.T
             else:  # 'layer_centre'
                 if vertical_coordinate_system == 'z':
-                    x3 = self.sigma_layers_z.T
+                    x3 = self.z_layers_static.T
                 else:  # 'sigma'
                     x3 = self.sigma_layers.T
         else:  # horizontal_position == 'element'
@@ -305,12 +310,12 @@ class Grid:
                 x2 = self.yc
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
-                    x3 = self.sigmac_levels_z.T
+                    x3 = self.zc_levels_static.T
                 else:  # 'sigma'
                     x3 = self.sigmac_levels.T
             else:  # 'layer_centre'
                 if vertical_coordinate_system == 'z':
-                    x3 = self.sigmac_layers_z.T
+                    x3 = self.zc_layers_static.T
                 else:  # 'sigma'
                     x3 = self.sigmac_layers.T
 

@@ -343,12 +343,12 @@ class NestManager:
                 x2 = self._grid_ref.y[indices]
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
-                    x3 = self._grid_ref.sigma_levels_z[indices, :].T
+                    x3 = self._grid_ref.z_levels_static[indices, :].T
                 else:  # 'sigma'
                     x3 = self._grid_ref.sigma_levels[indices, :].T
             else:  # 'layer_centre'
                 if vertical_coordinate_system == 'z':
-                    x3 = self._grid_ref.sigma_layers_z[indices, :].T
+                    x3 = self._grid_ref.z_layers_static[indices, :].T
                 else:  # 'sigma'
                     x3 = self._grid_ref.sigma_layers[indices, :].T
         else:  # horizontal_position == 'element'
@@ -361,12 +361,12 @@ class NestManager:
                 x2 = self._grid_ref.yc[indices]
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
-                    x3 = self._grid_ref.sigmac_levels_z[indices, :].T
+                    x3 = self._grid_ref.zc_levels_static[indices, :].T
                 else:  # 'sigma'
                     x3 = self._grid_ref.sigmac_levels[indices, :].T
             else:  # 'layer_centre'
                 if vertical_coordinate_system == 'z':
-                    x3 = self._grid_ref.sigmac_layers_z[indices, :].T
+                    x3 = self._grid_ref.zc_layers_static[indices, :].T
                 else:  # 'sigma'
                     x3 = self._grid_ref.sigmac_layers[indices, :].T
 
