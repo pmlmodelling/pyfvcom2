@@ -307,14 +307,16 @@ class NestManager:
 
     def get_interpolation_coordinates(self, horizontal_position: str,
                                       vertical_position: str,
-                                      coordinate_system: Optional[str] = "geographic") -> InterpolationCoordinates:
+                                      horizontal_coordinate_system: Optional[str] = "geographic",
+                                      vertical_coordinate_system: Optional[str] = "z") -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
             horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
             vertical_position: Whether depth coordinates are at layer centres or layer interfaces
                 ('layer_centre' or 'layer_interface').
-            coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
+            horizontal_coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
+            vertical_coordinate_system: The vertical coordinate system ("z" or "sigma") for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
@@ -325,35 +327,50 @@ class NestManager:
         if vertical_position not in ['layer_centre', 'layer_interface']:
             raise PyFVCOM2ValueError("vertical_position must be either 'layer_centre' or 'layer_interface'")
 
-        if coordinate_system not in ["geographic", "cartesian"]:
-            raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
+        if horizontal_coordinate_system not in ["geographic", "cartesian"]:
+            raise PyFVCOM2ValueError("horizontal_coordinate_system must be either 'geographic' or 'cartesian'")
+
+        if vertical_coordinate_system not in ["z", "sigma"]:
+            raise PyFVCOM2ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
 
         if horizontal_position == 'node':
             indices = self.get_all_nest_nodes()
-            if coordinate_system == "geographic":
+            if horizontal_coordinate_system == "geographic":
                 x1 = self._grid_ref.lon_nodes[indices]
                 x2 = self._grid_ref.lat_nodes[indices]
             else:  # cartesian
                 x1 = self._grid_ref.x[indices]
                 x2 = self._grid_ref.y[indices]
             if vertical_position == 'layer_interface':
-                x3 = self.sigma_levels_z[indices, :].T
-            else:  # Default to 'layer_centre'
-                x3 = self.sigma_layers_z[indices, :].T
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.sigma_levels_z[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigma_levels[indices, :].T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.sigma_layers_z[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigma_layers[indices, :].T
         else:  # horizontal_position == 'element'
             indices = self.get_all_nest_elements()
-            if coordinate_system == "geographic":
+            if horizontal_coordinate_system == "geographic":
                 x1 = self._grid_ref.lon_elements[indices]
                 x2 = self._grid_ref.lat_elements[indices]
             else:  # cartesian
                 x1 = self._grid_ref.xc[indices]
                 x2 = self._grid_ref.yc[indices]
             if vertical_position == 'layer_interface':
-                x3 = self.sigmac_levels_z[indices, :].T
-            else:  # Default to 'layer_centre'
-                x3 = self.sigmac_layers_z[indices, :].T
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.sigmac_levels_z[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigmac_levels[indices, :].T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.sigmac_layers_z[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigmac_layers[indices, :].T
 
-        return InterpolationCoordinates(self._dates, x3, x2, x1, coordinate_system=coordinate_system)
+        return InterpolationCoordinates(self._dates, x3, x2, x1, horizontal_coordinate_system=horizontal_coordinate_system, vertical_coordinate_system=vertical_coordinate_system)
 
     def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, horizontal_position: str) -> None:
         """ Add forcing data for the nests

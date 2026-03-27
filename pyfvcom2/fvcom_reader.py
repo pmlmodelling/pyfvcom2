@@ -347,7 +347,8 @@ class FVCOMReader:
 
     def get_interpolation_coordinates(self, horizontal_position: str,
                                       vertical_position: str,
-                                      coordinate_system: Optional[str] = "geographic",
+                                      horizontal_coordinate_system: Optional[str] = "geographic",
+                                      vertical_coordinate_system: Optional[str] = "z",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
@@ -357,15 +358,17 @@ class FVCOMReader:
             horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
             vertical_position: Whether depth coordinates are at layer centres or layer interfaces
                 ('layer_centre' or 'layer_interface').
-            coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation
+            horizontal_coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation
                 coordinates.
+            vertical_coordinate_system: The vertical coordinate system ("z" or "sigma") for the interpolation coordinates.
             dates: Optional array of datetime objects for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
         return self.grid.get_interpolation_coordinates(horizontal_position, vertical_position=vertical_position,
-                                                       coordinate_system=coordinate_system,
+                                                       horizontal_coordinate_system=horizontal_coordinate_system,
+                                                       vertical_coordinate_system=vertical_coordinate_system,
                                                        dates=dates)
 
     def _extract_mesh_data(self) -> MeshData:

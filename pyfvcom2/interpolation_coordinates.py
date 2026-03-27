@@ -8,7 +8,7 @@ __all__ = ["InterpolationCoordinates"]
 class InterpolationCoordinates:
     def __init__(
         self, dates: np.ndarray, x3: np.ndarray, x2: np.ndarray, x1: np.ndarray,
-        coordinate_system: str
+        horizontal_coordinate_system: str, vertical_coordinate_system: str
     ):
         """Initialize the InterpolationCoordinates with date, x3, x2, and x1 arrays.
 
@@ -24,15 +24,19 @@ class InterpolationCoordinates:
             x3 (np.ndarray): 2D array of x3 values (typically depth; shape: n_depths x n_horizontal_points).
             x2 (np.ndarray): 1D array of x2 values (typically y or latitude).
             x1 (np.ndarray): 1D array of x1 values (typically x or longitude).
-            coordinate_system (str): Coordinate system of the x1, x2, and x3 arrays ("geographic", "cartesian").
+            horizontal_coordinate_system (str): Coordinate system of the x1 and x2 arrays ("geographic", "cartesian").
+            vertical_coordinate_system (str): Coordinate system of the x3 array ("z", "sigma").
         """
         self._dates = dates
         self._x3 = x3
         self._x2 = x2
         self._x1 = x1
-        if coordinate_system not in ["geographic", "cartesian"]:
-            raise ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
-        self.coordinate_system = coordinate_system
+        if horizontal_coordinate_system not in ["geographic", "cartesian"]:
+            raise ValueError("horizontal_coordinate_system must be either 'geographic' or 'cartesian'")
+        if vertical_coordinate_system not in ["z", "sigma"]:
+            raise ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+        self._horizontal_coordinate_system = horizontal_coordinate_system
+        self._vertical_coordinate_system = vertical_coordinate_system
 
     # Add getters and setters for each attribute if needed
     @property
@@ -68,11 +72,21 @@ class InterpolationCoordinates:
         self._x1 = value
     
     @property
-    def coordinate_system(self):
-        return self._coordinate_system
+    def horizontal_coordinate_system(self):
+        return self._horizontal_coordinate_system
 
-    @coordinate_system.setter
-    def coordinate_system(self, value):
+    @horizontal_coordinate_system.setter
+    def horizontal_coordinate_system(self, value):
         if value not in ["geographic", "cartesian"]:
-            raise ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
-        self._coordinate_system = value
+            raise ValueError("horizontal_coordinate_system must be either 'geographic' or 'cartesian'")
+        self._horizontal_coordinate_system = value
+
+    @property
+    def vertical_coordinate_system(self):
+        return self._vertical_coordinate_system
+
+    @vertical_coordinate_system.setter
+    def vertical_coordinate_system(self, value):
+        if value not in ["z", "sigma"]:
+            raise ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+        self._vertical_coordinate_system = value

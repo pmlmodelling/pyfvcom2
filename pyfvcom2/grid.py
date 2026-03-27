@@ -251,7 +251,8 @@ class Grid:
         #self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
 
     def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: str,
-                                      coordinate_system: str = "geographic",
+                                      horizontal_coordinate_system: str = "geographic",
+                                      vertical_coordinate_system: str = "z",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
@@ -259,7 +260,8 @@ class Grid:
             horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
             vertical_position: Whether depth coordinates are at layer centres or layer interfaces
                 ('layer_centre' or 'layer_interface').
-            coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
+            horizontal_coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
+            vertical_coordinate_system: The vertical coordinate system ("z" or "sigma") for the interpolation coordinates.
             dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
 
         Returns:
@@ -271,37 +273,52 @@ class Grid:
         if vertical_position not in ['layer_centre', 'layer_interface']:
             raise PyFVCOM2ValueError("vertical_position must be either 'layer_centre' or 'layer_interface'")
 
-        if coordinate_system not in ['geographic', 'cartesian']:
+        if horizontal_coordinate_system not in ['geographic', 'cartesian']:
             raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
+        if vertical_coordinate_system not in ['z', 'sigma']:
+            raise PyFVCOM2ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+
         if horizontal_position == 'node':
-            if coordinate_system == 'geographic':
+            if horizontal_coordinate_system == 'geographic':
                 x1 = self.lon_nodes
                 x2 = self.lat_nodes
             else:  # cartesian
                 x1 = self.x
                 x2 = self.y
             if vertical_position == 'layer_interface':
-                x3 = self.sigma_levels_z.T
-            else:  # Default to 'layer_centre'
-                x3 = self.sigma_layers_z.T
+                if vertical_coordinate_system == 'z':
+                    x3 = self.sigma_levels_z.T
+                else:  # 'sigma'
+                    x3 = self.sigma_levels.T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self.sigma_layers_z.T
+                else:  # 'sigma'
+                    x3 = self.sigma_layers.T
         else:  # horizontal_position == 'element'
-            if coordinate_system == 'geographic':
+            if horizontal_coordinate_system == 'geographic':
                 x1 = self.lon_elements
                 x2 = self.lat_elements
             else:  # cartesian
                 x1 = self.xc
                 x2 = self.yc
             if vertical_position == 'layer_interface':
-                x3 = self.sigmac_levels_z.T
-            else:  # Default to 'layer_centre'
-                x3 = self.sigmac_layers_z.T
+                if vertical_coordinate_system == 'z':
+                    x3 = self.sigmac_levels_z.T
+                else:  # 'sigma'
+                    x3 = self.sigmac_levels.T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self.sigmac_layers_z.T
+                else:  # 'sigma'
+                    x3 = self.sigmac_layers.T
 
         # Use provided dates or empty array
         if dates is None:
             dates = np.array([])
 
-        return InterpolationCoordinates(dates, x3, x2, x1)
+        return InterpolationCoordinates(dates, x3, x2, x1, horizontal_coordinate_system=horizontal_coordinate_system, vertical_coordinate_system=vertical_coordinate_system)
 
 
 def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_system: str,

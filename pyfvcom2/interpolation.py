@@ -377,7 +377,7 @@ class FVCOMInterpolator(Interpolator):
 
         # Create interpolator
         var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
-        interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, data)
+        interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.horizontal_coordinate_system, data)
 
         # Interpolate
         interpolated_data[:] = interpolator(coordinates.x1, coordinates.x2)
@@ -427,7 +427,7 @@ class FVCOMInterpolator(Interpolator):
             data = self.fvcom_reader.get_var(fvcom_var_name, target_date)
 
             # Create interpolator
-            interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, data)
+            interpolator = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.horizontal_coordinate_system, data)
 
             interpolated_data[d_idx, :] = interpolator(coordinates.x1, coordinates.x2)
 
@@ -488,7 +488,7 @@ class FVCOMInterpolator(Interpolator):
         
         for i in range(n_depths_fvcom):
             depth_interp = self._get_linear_interpolator_for_variable(var_is_node_based,
-                                                                      coordinates.coordinate_system, fvcom_depths[i,:])
+                                                                      coordinates.horizontal_coordinate_system, fvcom_depths[i,:])
 
             depth_on_target_horizontal_grid[i, :] = depth_interp(coordinates.x1, coordinates.x2)
 
@@ -515,7 +515,7 @@ class FVCOMInterpolator(Interpolator):
             )
 
             for i in range(n_depths_fvcom):
-                interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.coordinate_system, fvcom_var[i, :])
+                interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.horizontal_coordinate_system, fvcom_var[i, :])
 
                 var_on_target_horizontal_grid[i, :] = interp(coordinates.x1, coordinates.x2)
 
@@ -544,13 +544,13 @@ class FVCOMInterpolator(Interpolator):
         return interpolated_var
 
     def _get_linear_interpolator_for_variable(self, var_is_node_based: bool,
-                                              coordinate_system: str,
+                                              horizontal_coordinate_system: str,
                                               data: np.ndarray) -> LinearTriInterpolator:
         """Get the appropriate linear interpolator based on whether the variable is node or element based.
         
         Args:
             var_is_node_based (bool): True if the variable is node based, False if element based.
-            coordinate_system (str): The coordinate system of the data ('geographic' or 'cartesian').
+            horizontal_coordinate_system (str): The coordinate system of the data ('geographic' or 'cartesian').
             data (np.ndarray): Data array for the variable.
         Returns:
             LinearTriInterpolator: The interpolator object.
@@ -558,13 +558,13 @@ class FVCOMInterpolator(Interpolator):
         # Determine if variable is node or element based
         if var_is_node_based:
             # Node based variable
-            if coordinate_system == "geographic":
+            if horizontal_coordinate_system == "geographic":
                 triangulation = self.triangulation_nodes_geographic
             else:
                 triangulation = self.triangulation_nodes_cartesian
         else:
             # Element based variable
-            if coordinate_system == "geographic":
+            if horizontal_coordinate_system == "geographic":
                 triangulation = self.triangulation_elements_geographic
             else:
                 triangulation = self.triangulation_elements_cartesian
