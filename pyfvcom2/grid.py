@@ -250,7 +250,7 @@ class Grid:
         #self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
         #self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
 
-    def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: Optional[str] = None,
+    def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: str,
                                       coordinate_system: str = "geographic",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
@@ -258,7 +258,7 @@ class Grid:
         Args:
             horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
             vertical_position: Whether depth coordinates are at layer centres or layer interfaces
-                ('layer_centre' or 'layer_interface'). If None, defaults to 'layer_centre'.
+                ('layer_centre' or 'layer_interface').
             coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
             dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
 

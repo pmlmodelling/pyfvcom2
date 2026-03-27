@@ -346,7 +346,7 @@ class FVCOMReader:
             return self.grid.n_sigma_levels
 
     def get_interpolation_coordinates(self, horizontal_position: str,
-                                      vertical_position: Optional[str] = 'layer_centre',
+                                      vertical_position: str,
                                       coordinate_system: Optional[str] = "geographic",
                                       dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.

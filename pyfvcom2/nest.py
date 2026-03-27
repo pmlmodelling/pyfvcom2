@@ -306,7 +306,7 @@ class NestManager:
         return np.array(all_element_weights, dtype=np.float32)
 
     def get_interpolation_coordinates(self, horizontal_position: str,
-                                      vertical_position: Optional[str] = 'layer_centre',
+                                      vertical_position: str,
                                       coordinate_system: Optional[str] = "geographic") -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
@@ -360,7 +360,7 @@ class NestManager:
             fvcom_var_name: FVCOM name for the forcing variable.
             horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
         """
-        interpolation_coords = self.get_interpolation_coordinates(horizontal_position)
+        interpolation_coords = self.get_interpolation_coordinates(horizontal_position, 'layer_centre')
         forcing_data = interpolator.interpolate(interpolation_coords, fvcom_var_name)
         self._forcing_data[fvcom_var_name] = forcing_data
 
