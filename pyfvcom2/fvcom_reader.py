@@ -391,16 +391,16 @@ class FVCOMReader:
         if var_is_node_based:
             h = self.grid.bathy_nodes
             if vertical_position == 'layer_centre':
-                z_geoid = sigma_to_z_coords(self.grid.sigma_layers, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_layers_nodes, h, zeta)
             else:
-                z_geoid = sigma_to_z_coords(self.grid.sigma_levels, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_levels_nodes, h, zeta)
         else:
             zeta = nodes2elems(zeta, self.grid.triangles)
             h = self.grid.bathy_elements
             if vertical_position == 'layer_centre':
-                z_geoid = sigma_to_z_coords(self.grid.sigmac_layers, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_layers_elements, h, zeta)
             else:
-                z_geoid = sigma_to_z_coords(self.grid.sigmac_levels, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_levels_elements, h, zeta)
 
         self._z_level_cache[cache_key] = (z_geoid, zeta)
 
