@@ -322,6 +322,9 @@ class NestManager:
         if horizontal_position not in ['node', 'element']:
           raise PyFVCOM2ValueError("horizontal_position must be either 'node' or 'element'")
 
+        if vertical_position not in ['layer_centre', 'layer_interface']:
+            raise PyFVCOM2ValueError("vertical_position must be either 'layer_centre' or 'layer_interface'")
+
         if coordinate_system not in ["geographic", "cartesian"]:
             raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
