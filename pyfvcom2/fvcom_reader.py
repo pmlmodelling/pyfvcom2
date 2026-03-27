@@ -335,7 +335,8 @@ class FVCOMReader:
                 return self.grid.zc_levels_static.T
 
     def get_time_dep_z_levels(self, var_name: str, target_datetime: datetime=None,
-                              tolerance: Optional[timedelta]=None, zeta_var_name: str='zeta') -> np.ndarray:
+                              tolerance: Optional[timedelta]=None, zeta_var_name: str='zeta',
+                              relative_to_free_surface: bool=False) -> np.ndarray:
         """Get time-dependent z levels/layers for the variable based on whether it is node or element based.
 
         Args:
@@ -343,7 +344,9 @@ class FVCOMReader:
             target_datetime (datetime): The target datetime for which to retrieve the z levels.
             tolerance (timedelta, optional): The tolerance for matching the target datetime.
             zeta_var_name (str, optional): The name of the zeta (ssh) variable. Defaults to 'zeta'.
-
+            relative_to_free_surface (bool, optional): Whether to return z levels relative to the
+            free surface or the zero geoid. Defaults to False (relative to zero geoid).
+            
         Returns:
             np.ndarray: Sigma levels array.
         """
@@ -351,29 +354,36 @@ class FVCOMReader:
 
         vertical_position = self.get_vertical_position(var_name)
 
-        # Check cache
+        # Check cache — stores (z_geoid, zeta) tuples so both reference
+        # frames can be served from a single cached computation.
         cache_key = (var_is_node_based, vertical_position, target_datetime)
         if cache_key in self._z_level_cache:
-            return self._z_level_cache[cache_key]
+            z_geoid, zeta_cached = self._z_level_cache[cache_key]
+            if relative_to_free_surface:
+                return z_geoid - zeta_cached
+            return z_geoid
 
         zeta = self.get_var(zeta_var_name, target_datetime=target_datetime, tolerance=tolerance)
 
         if var_is_node_based:
             h = self.grid.bathy_nodes
             if vertical_position == 'layer_centre':
-                result = sigma_to_z_coords(self.grid.sigma_layers, h, zeta)
+                z_geoid = sigma_to_z_coords(self.grid.sigma_layers, h, zeta)
             else:
-                result = sigma_to_z_coords(self.grid.sigma_levels, h, zeta)
+                z_geoid = sigma_to_z_coords(self.grid.sigma_levels, h, zeta)
         else:
             zeta = nodes2elems(zeta, self.grid.triangles)
             h = self.grid.bathy_elements
             if vertical_position == 'layer_centre':
-                result = sigma_to_z_coords(self.grid.sigmac_layers, h, zeta)
+                z_geoid = sigma_to_z_coords(self.grid.sigmac_layers, h, zeta)
             else:
-                result = sigma_to_z_coords(self.grid.sigmac_levels, h, zeta)
+                z_geoid = sigma_to_z_coords(self.grid.sigmac_levels, h, zeta)
 
-        self._z_level_cache[cache_key] = result
-        return result
+        self._z_level_cache[cache_key] = (z_geoid, zeta)
+
+        if relative_to_free_surface:
+            return z_geoid - zeta
+        return z_geoid
 
     def get_n_depth_levels(self, var_name: str) -> int:
         """Get number of z levels/layers
