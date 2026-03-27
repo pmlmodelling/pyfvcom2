@@ -306,7 +306,30 @@ class FVCOMReader:
                 "Masked values will be filled with default fill value."
             )
         return np.ma.getdata(var)
-        
+
+    def get_sigma_levels(self, var_name: str) -> np.ndarray:
+        """Get the sigma levels/layers for the variable based on whether it is node or element based.
+
+        Args:
+            var_name (str): The name of the variable.
+        Returns:
+            np.ndarray: Sigma levels array.
+        """
+        var_is_node_based = self.var_is_node_based(var_name)
+
+        vertical_position = self.get_vertical_position(var_name)
+
+        if var_is_node_based:
+            if vertical_position == 'layer_centre':
+                return self.grid.sigma_layers.T
+            else:
+                return self.grid.sigma_levels.T
+        else:
+            if vertical_position == 'layer_centre':
+                return self.grid.sigmac_layers.T
+            else:
+                return self.grid.sigmac_levels.T
+
     def get_z_levels(self, var_name: str) -> np.ndarray:
         """Get static z levels/layers for the variable
 

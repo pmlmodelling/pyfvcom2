@@ -319,13 +319,27 @@ class FVCOMInterpolator(Interpolator):
         return self._triangulation_elements_geographic
 
     def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str,
-                    extrapolate: Optional[bool] = False) -> np.ndarray:
+                    extrapolate_horizontally: Optional[bool] = False,
+                    extrapolate_down: Optional[bool] = False,
+                    extrapolate_up: Optional[bool] = True,
+                    apply_land_sea_mask: Optional[bool] = True,
+                    land_sea_mask: Optional[np.ndarray] = None) -> np.ndarray:
         """Perform interpolation operation for FVCOM data.
+
+        The land_sea_mask is only applied when extrapolate is False. If not provided and extrapolate is False,
+        it is automatically generated from the supplied coordinates object through a call to
+        `self.generate_land_sea_mask`. The argument is included to save on computation time in cases where in
+        `interpolate` is called multiple times with the same coordinates, e.g., when interpolating multiple
+        variables onto the same grid.
 
         Args:
             coordinates (InterpolationCoordinates): Coordinates on the FVCOM grid.
             fvcom_var_name (str): Name of the FVCOM variable to interpolate.
-            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
+            extrapolate_horizontally (Optional[bool]): Whether to allow extrapolation outside the horizontal grid.
+            extrapolate_down (Optional[bool]): Whether to allow extrapolation below the bottom grid.
+            extrapolate_up (Optional[bool]): Whether to allow extrapolation above the surface grid.
+            apply_land_sea_mask (Optional[bool]): Whether to apply the land-sea mask during interpolation.
+            land_sea_mask (Optional[np.ndarray]): Optional land-sea mask to apply during interpolation.
 
         Returns:
             np.ndarray: Interpolated variable on the FVCOM grid.
@@ -337,18 +351,41 @@ class FVCOMInterpolator(Interpolator):
         has_time = 'time' in var_dims
         
         # Set has_depth flag
-        has_depth = self.fvcom_reader.get_sigma_type(fvcom_var_name) is not None
+        has_depth = self.fvcom_reader.get_vertical_position(fvcom_var_name) is not None
+
+        # If not extrapolating, generate land-sea mask is not provided
+        if apply_land_sea_mask and land_sea_mask is None:
+            land_sea_mask = ~self.generate_land_sea_mask(coordinates)
 
         # Route to appropriate interpolation method based on dimensions
         if not has_time and not has_depth:
             # Case 1: 2D time independent (e.g., bathymetry: [node] or [nele])
-            return self._interpolate_2d_static(coordinates, fvcom_var_name, extrapolate=extrapolate)
+            var = self._interpolate_2d_static(coordinates, fvcom_var_name, extrapolate_horizontally=extrapolate_horizontally)
+
+            if apply_land_sea_mask:
+                # Apply land-sea mask to interpolated variable
+                var[land_sea_mask] = np.nan
+            return var
+
         elif has_time and not has_depth:
             # Case 2: 2D time dependent (e.g., zeta: [time, node])
-            return self._interpolate_2d_time_dependent(coordinates, fvcom_var_name, extrapolate=extrapolate)
+            var = self._interpolate_2d_time_dependent(coordinates, fvcom_var_name, extrapolate_horizontally=extrapolate_horizontally)
+            
+            if apply_land_sea_mask:
+                # Apply land-sea mask to interpolated variable
+                var[:, land_sea_mask] = np.nan
+            return var
+
         elif has_time and has_depth:
             # Case 3: 3D time dependent (e.g., temp: [time, siglay, node])
-            return self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, extrapolate=extrapolate)
+            var = self._interpolate_3d_time_dependent(coordinates, fvcom_var_name, extrapolate_horizontally=extrapolate_horizontally,
+                                                      extrapolate_down=extrapolate_down, extrapolate_up=extrapolate_up)
+            
+            if apply_land_sea_mask:
+                # Apply land-sea mask to interpolated variable
+                var[:, :, land_sea_mask] = np.nan
+            return var
+
         else:
             raise PyFVCOM2ValueError(
                 f"Unsupported variable dimensions for {fvcom_var_name}: {var_dims}"
@@ -356,13 +393,13 @@ class FVCOMInterpolator(Interpolator):
     
     def _interpolate_2d_static(self, coordinates: InterpolationCoordinates,
                                fvcom_var_name: str,
-                               extrapolate: Optional[bool] = False) -> np.ndarray:
+                               extrapolate_horizontally: Optional[bool] = False) -> np.ndarray:
         """Interpolate a 2D time-independent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
-            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
+            extrapolate_horizontally (Optional[bool]): Whether to allow extrapolation outside the grid.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_points,).
@@ -383,7 +420,7 @@ class FVCOMInterpolator(Interpolator):
         interpolated_data[:] = interpolator(coordinates.x1, coordinates.x2)
 
         # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
-        if extrapolate:
+        if extrapolate_horizontally:
             target_points = np.column_stack((coordinates.x1, coordinates.x2))
             self._fill_nans_nearest_neighbor(interpolated_data, target_points, var_is_node_based, data)
 
@@ -391,13 +428,13 @@ class FVCOMInterpolator(Interpolator):
     
     def _interpolate_2d_time_dependent(self, coordinates: InterpolationCoordinates,
                                        fvcom_var_name: str,
-                                       extrapolate: Optional[bool] = False) -> np.ndarray:
+                                       extrapolate_horizontally: Optional[bool] = False) -> np.ndarray:
         """Interpolate a 2D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
-            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
+            extrapolate_horizontally (Optional[bool]): Whether to allow extrapolation outside the grid.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_points).
@@ -432,7 +469,7 @@ class FVCOMInterpolator(Interpolator):
             interpolated_data[d_idx, :] = interpolator(coordinates.x1, coordinates.x2)
 
             # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
-            if extrapolate:
+            if extrapolate_horizontally:
                 target_points = np.column_stack((coordinates.x1, coordinates.x2))
                 self._fill_nans_nearest_neighbor(interpolated_data[d_idx, :], target_points,
                                                  var_is_node_based, data,
@@ -442,13 +479,18 @@ class FVCOMInterpolator(Interpolator):
 
     def _interpolate_3d_time_dependent(self, coordinates: InterpolationCoordinates,
                                        fvcom_var_name: str,
-                                       extrapolate: Optional[bool] = False) -> np.ndarray:
+                                       extrapolate_horizontally: Optional[bool] = False,
+                                       extrapolate_down: Optional[bool] = False,
+                                       extrapolate_up: Optional[bool] = True) -> np.ndarray:
         """Interpolate a 3D time-dependent FVCOM variable.
         
         Args:
             coordinates (InterpolationCoordinates): Target coordinates.
             fvcom_var_name (str): Name of the FVCOM variable.
-            extrapolate (Optional[bool]): Whether to allow extrapolation outside the grid.
+            extrapolate_horizontally (Optional[bool]): Whether to allow horizontal extrapolation outside the grid.
+            extrapolate_down (Optional[bool]): Whether to allow extrapolation below the grid.
+            extrapolate_up (Optional[bool]): Whether to allow extrapolation above the grid. NB Useful if highest depth point is a layer
+            center and thus does not reach all the way to the surface. Defaults to True for this reason.
             
         Returns:
             np.ndarray: Interpolated variable data with shape (n_times, n_depths, n_points).
@@ -464,41 +506,15 @@ class FVCOMInterpolator(Interpolator):
         n_depths = coordinates.x3.shape[0]
         n_points = coordinates.x1.shape[0]
 
-        # The number of depths in the FVCOM data (variable dependent)
-        n_depths_fvcom = self.fvcom_reader.get_n_z_levels(fvcom_var_name)
+        # The number of depth levels in the FVCOM data (variable dependent, as can be
+        # defined at layer centers or layer interfaces)
+        n_depths_fvcom = self.fvcom_reader.get_n_depth_levels(fvcom_var_name)
 
         # Is the variable node or element based?
         var_is_node_based = self.fvcom_reader.var_is_node_based(fvcom_var_name)
 
         # Target points for interpolation
         target_points = np.column_stack((coordinates.x1, coordinates.x2))
-
-        # Depth interpolation 
-        # -------------------
-
-        # Depth are spatially variable in FVCOM, so we need to interpolate these first
-
-        # Compute depth levels (ignores temporal variation in zeta)
-        fvcom_depths = self.fvcom_reader.get_z_levels(fvcom_var_name)
-
-        # First, interpolate onto the new horizontal grid for each depth level
-        depth_on_target_horizontal_grid = np.empty(
-            (n_depths_fvcom, n_points), dtype=fvcom_depths.dtype
-        )
-        
-        for i in range(n_depths_fvcom):
-            depth_interp = self._get_linear_interpolator_for_variable(var_is_node_based,
-                                                                      coordinates.horizontal_coordinate_system, fvcom_depths[i,:])
-
-            depth_on_target_horizontal_grid[i, :] = depth_interp(coordinates.x1, coordinates.x2)
-
-            # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
-            if extrapolate:
-                self._fill_nans_nearest_neighbor(depth_on_target_horizontal_grid[i, :], target_points,
-                                                 var_is_node_based, fvcom_depths[i, :], warn=False)
-
-        # Variable interpolation
-        # ----------------------
 
         # Initialise array to hold interpolated data
         interpolated_var = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
@@ -507,20 +523,57 @@ class FVCOMInterpolator(Interpolator):
         for d_idx, target_date in enumerate(dates):
             print(f"Interpolating FVCOM {fvcom_var_name} for date: {target_date}.")
 
+            # FVCOM variable for this time point
             fvcom_var = self.fvcom_reader.get_var(fvcom_var_name, target_date)
 
-            # First, interpolate onto the new horizontal grid for each depth level
+            # Read the correct FVCOM depth coordinates
+            if coordinates.vertical_coordinate_system == 'z':
+                # Interpolation to be done in z coordinates. Depths are spatially
+                # variable in FVCOM, so we need to interpolate these to the target
+                # horizontal grid before performing vertical interpolation.
+                fvcom_depths = self.fvcom_reader.get_time_dep_z_levels(
+                    fvcom_var_name,
+                    target_datetime=target_date,
+                    relative_to_free_surface=True
+                )
+                # Create a mask for all depths that are above the free surface (i.e., where depth is positive).
+                # This will be used to mask out these points during vertical interpolation.
+                above_surface_mask = fvcom_depths > 0
+
+            else: # sigma coordinates
+                # Interpolation to be done in sigma coordinates. Typically, sigma coordinates
+                # do not vary horizontally, but we allow for it here. They do not vary in time.
+                fvcom_depths = self.fvcom_reader.get_sigma_levels(fvcom_var_name)
+
+                # No mask here, as all sigma levels are valid for interpolation
+                above_surface_mask = np.zeros_like(fvcom_depths, dtype=bool)
+
+            # Array holding variable data interpolated onto the new horizontal grid at each
+            # FVCOM depth level
             var_on_target_horizontal_grid = np.empty(
                 (n_depths_fvcom, n_points), dtype=fvcom_var.dtype
             )
 
+            # Array holding depth data interpolated onto the new horizontal grid at each
+            # FVCOM depth level (only used for vertical interpolation)
+            depth_on_target_horizontal_grid = np.empty(
+                (n_depths_fvcom, n_points), dtype=fvcom_depths.dtype
+            )
+
+            # Loop over all FVCOM depth levels 
             for i in range(n_depths_fvcom):
-                interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.horizontal_coordinate_system, fvcom_var[i, :])
+                # Horizontal interpolation of depth levels for this time step and depth level.
+                depth_interp = self._get_linear_interpolator_for_variable(var_is_node_based,
+                                                                          coordinates.horizontal_coordinate_system, fvcom_depths[i,:])
+                depth_on_target_horizontal_grid[i, :] = depth_interp(coordinates.x1, coordinates.x2)
+                if extrapolate_horizontally:
+                    self._fill_nans_nearest_neighbor(depth_on_target_horizontal_grid[i, :], target_points,
+                                                     var_is_node_based, fvcom_depths[i, :], warn=False)
 
-                var_on_target_horizontal_grid[i, :] = interp(coordinates.x1, coordinates.x2)
-
-                # Fill NaNs indicating out-of-bounds points using nearest-neighbor interpolation
-                if extrapolate:
+                # Horizontal interpolation of variable for this time step and depth level.
+                var_interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.horizontal_coordinate_system, fvcom_var[i, :])
+                var_on_target_horizontal_grid[i, :] = var_interp(coordinates.x1, coordinates.x2)
+                if extrapolate_horizontally:
                     self._fill_nans_nearest_neighbor(var_on_target_horizontal_grid[i, :], target_points,
                                                      var_is_node_based, fvcom_var[i, :],
                                                      context_msg=f"at depth index {i} and time {target_date}")
@@ -528,16 +581,24 @@ class FVCOMInterpolator(Interpolator):
             # Next, interpolate onto depth levels of each vertical point
             var_on_target_grid = np.empty((n_depths, n_points), dtype=fvcom_var.dtype)
 
+            # Set fill_value based on the value of extrapolate_up and extrapolate_down.
+            fill_value = (np.nan if not extrapolate_down else var_on_target_horizontal_grid[0, i],
+                          np.nan if not extrapolate_up else var_on_target_horizontal_grid[-1, i])
+
             for i in range(n_points):
                 interp = interpolate.interp1d(
                     depth_on_target_horizontal_grid[:, i],
                     var_on_target_horizontal_grid[:, i],
                     kind="linear",
                     bounds_error=False,
-                    fill_value="extrapolate",
+                    fill_value=fill_value
                 )
                 target_depths = coordinates.x3[:, i]
                 var_on_target_grid[:, i] = interp(target_depths)
+
+            # Apply above surface mask to interpolated variable (only relevant for interpolation in z coordinates)
+            if coordinates.vertical_coordinate_system == 'z':
+                var_on_target_grid[above_surface_mask[:]] = np.nan
 
             interpolated_var[d_idx, :, :] = var_on_target_grid
 
@@ -637,3 +698,25 @@ class FVCOMInterpolator(Interpolator):
         )
         
         return interpolator
+
+    def generate_land_sea_mask(self, coordinates: InterpolationCoordinates) -> np.ndarray:
+        """Generate a land-sea mask for the given interpolation coordinates
+        
+        The mask indicates which points are within the convex hull of the FVCOM grid and which are not,
+        and thus which are sea points and which are land points.
+
+        Args:
+            coordinates (InterpolationCoordinates): The interpolation coordinates for which to generate the mask.
+        
+        Returns:
+            np.ndarray: A boolean array of shape (n_points,) where True indicates a sea point and False indicates a land point.
+        """
+        # Use the triangulation of the grid nodes to determine which points are within the convex hull of the grid
+        if coordinates.horizontal_coordinate_system == "geographic":
+            triangulation = self.triangulation_nodes_geographic
+        else:
+            triangulation = self.triangulation_nodes_cartesian
+        mask = triangulation.get_trifinder()(coordinates.x1, coordinates.x2) != -1
+
+        return mask
+
