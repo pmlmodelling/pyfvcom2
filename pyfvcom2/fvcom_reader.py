@@ -209,13 +209,13 @@ class FVCOMReader:
 
     @property
     def bathy_nodes(self):
-        """Get the bathymetry values at nodes (transformed so to be positive up)"""
-        return self.grid.bathy_nodes * -1.0
+        """Get the bathymetry values at nodes"""
+        return self.grid.bathy_nodes
 
     @property
     def bathy_elements(self):
-        """Get the bathymetry values at element centroids (transformed so to be positive up)"""
-        return self.grid.bathy_elements * -1.0
+        """Get the bathymetry values at element centroids"""
+        return self.grid.bathy_elements
 
     @property
     def dates(self) -> List[datetime]:
@@ -389,18 +389,18 @@ class FVCOMReader:
         zeta = self.get_var(zeta_var_name, target_datetime=target_datetime, tolerance=tolerance)
 
         if var_is_node_based:
-            h = self.grid.bathy_nodes
+            full_depth = -self.grid.bathy_nodes
             if vertical_position == 'layer_centre':
-                z_geoid = sigma_to_z_coords(self.sigma_layers_nodes, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_layers_nodes, full_depth, zeta)
             else:
-                z_geoid = sigma_to_z_coords(self.sigma_levels_nodes, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_levels_nodes, full_depth, zeta)
         else:
             zeta = nodes2elems(zeta, self.grid.triangles)
-            h = self.grid.bathy_elements
+            full_depth = -self.grid.bathy_elements
             if vertical_position == 'layer_centre':
-                z_geoid = sigma_to_z_coords(self.sigma_layers_elements, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_layers_elements, full_depth, zeta)
             else:
-                z_geoid = sigma_to_z_coords(self.sigma_levels_elements, h, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_levels_elements, full_depth, zeta)
 
         self._z_level_cache[cache_key] = (z_geoid, zeta)
 
