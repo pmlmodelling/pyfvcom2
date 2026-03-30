@@ -378,7 +378,9 @@ class FVCOMReader:
         vertical_position = self.get_vertical_position(var_name)
 
         # Check cache — stores (z_geoid, zeta) tuples so both reference
-        # frames can be served from a single cached computation.
+        # frames can be served from a single cached computation. Here:
+        # - z_geoid is the depth of z levels relative to the zero geoid
+        # - zeta is the free surface elevation at the target time
         cache_key = (var_is_node_based, vertical_position, target_datetime)
         if cache_key in self._z_level_cache:
             z_geoid, zeta_cached = self._z_level_cache[cache_key]
@@ -389,18 +391,24 @@ class FVCOMReader:
         zeta = self.get_var(zeta_var_name, target_datetime=target_datetime, tolerance=tolerance)
 
         if var_is_node_based:
-            full_depth = -self.grid.bathy_nodes
+            full_depth = self.grid.bathy_nodes
             if vertical_position == 'layer_centre':
-                z_geoid = sigma_to_z_coords(self.sigma_layers_nodes, full_depth, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_layers_nodes, zeta, full_depth)
             else:
-                z_geoid = sigma_to_z_coords(self.sigma_levels_nodes, full_depth, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_levels_nodes, zeta, full_depth)
+            is_wet = self.get_var('wet_nodes', target_datetime=target_datetime, tolerance=tolerance) 
         else:
             zeta = nodes2elems(zeta, self.grid.triangles)
-            full_depth = -self.grid.bathy_elements
+            full_depth = self.grid.bathy_elements
             if vertical_position == 'layer_centre':
-                z_geoid = sigma_to_z_coords(self.sigma_layers_elements, full_depth, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_layers_elements, zeta, full_depth)
             else:
-                z_geoid = sigma_to_z_coords(self.sigma_levels_elements, full_depth, zeta)
+                z_geoid = sigma_to_z_coords(self.sigma_levels_elements, zeta, full_depth)
+            is_wet = self.get_var('wet_cells', target_datetime=target_datetime, tolerance=tolerance)
+
+        # Mask dry cells
+        dry_cells = np.asarray(is_wet==0, dtype=bool)
+        z_geoid[:, dry_cells] = np.nan
 
         self._z_level_cache[cache_key] = (z_geoid, zeta)
 
