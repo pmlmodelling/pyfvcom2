@@ -562,7 +562,7 @@ class FVCOMInterpolator(Interpolator):
                 depth_on_target_horizontal_grid[i, :] = depth_interp(coordinates.x1, coordinates.x2)
                 if extrapolate_horizontally:
                     self._fill_nans_nearest_neighbor(depth_on_target_horizontal_grid[i, :], target_points,
-                                                     var_is_node_based, fvcom_depths[i, :], warn=False)
+                                                     var_is_node_based, fvcom_depths[i, :])
 
                 # Horizontal interpolation of variable for this time step and depth level.
                 var_interp = self._get_linear_interpolator_for_variable(var_is_node_based, coordinates.horizontal_coordinate_system, fvcom_var[i, :])
@@ -572,23 +572,14 @@ class FVCOMInterpolator(Interpolator):
                                                      var_is_node_based, fvcom_var[i, :],
                                                      context_msg=f"at depth index {i} and time {target_date}")
 
-            # Calculate depth mask
-            if coordinates.vertical_coordinate_system == 'z':
-                above_surface_mask = depth_on_target_horizontal_grid > 0
-            else:
-                above_surface_mask = np.zeros_like(depth_on_target_horizontal_grid, dtype=bool)
-            
-            # Take top slice of mask
-            above_surface_mask = above_surface_mask[0, :]
-
             # Next, interpolate onto depth levels of each vertical point
             var_on_target_grid = np.empty((n_depths, n_points), dtype=fvcom_var.dtype)
 
-            # Set fill_value based on the value of extrapolate_up and extrapolate_down.
-            fill_value = (np.nan if not extrapolate_down else var_on_target_horizontal_grid[0, i],
-                          np.nan if not extrapolate_up else var_on_target_horizontal_grid[-1, i])
-
             for i in range(n_points):
+                # Set fill_value per point based on extrapolate_up and extrapolate_down.
+                fill_value = (np.nan if not extrapolate_down else var_on_target_horizontal_grid[0, i],
+                              np.nan if not extrapolate_up else var_on_target_horizontal_grid[-1, i])
+
                 interp = interpolate.interp1d(
                     depth_on_target_horizontal_grid[:, i],
                     var_on_target_horizontal_grid[:, i],
@@ -598,10 +589,6 @@ class FVCOMInterpolator(Interpolator):
                 )
                 target_depths = coordinates.x3[:, i]
                 var_on_target_grid[:, i] = interp(target_depths)
-
-            # Apply above surface mask to interpolated variable (only relevant for interpolation in z coordinates)
-            if coordinates.vertical_coordinate_system == 'z':
-                var_on_target_grid[:, above_surface_mask] = np.nan
 
             interpolated_var[d_idx, :, :] = var_on_target_grid
 
