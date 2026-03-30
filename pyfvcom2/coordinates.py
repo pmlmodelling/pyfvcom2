@@ -113,7 +113,7 @@ def sigma_to_z_coords(
 
     # Broadcasting: zeta (1D) + (h_plus_zeta (1D) * sigma_coords (2D))
     # This computes all z coordinates in a single vectorized operation
-    z_coords = zeta + h_plus_zeta * sigma_coords
+    z_coords = zeta + (h_plus_zeta * sigma_coords)
 
     return z_coords
 

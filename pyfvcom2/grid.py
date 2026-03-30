@@ -242,48 +242,88 @@ class Grid:
         self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
         self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
 
-        # Depth levels in z coordinates
-        self.sigma_layers_z = self.h[:, np.newaxis] * self.sigma_layers
-        self.sigmac_layers_z = self.hc[:, np.newaxis] * self.sigmac_layers
-        self.sigma_levels_z = self.h[:, np.newaxis] * self.sigma_levels
-        self.sigmac_levels_z = self.hc[:, np.newaxis] * self.sigmac_levels
+        # Compute static z coordinates for sigma levels and layers, which can be used
+        # when interpolating data onto FVCOM's grid. We assume a value of zero for zeta
+        # and generate a set of "corrected" values for the bathymetry by replacing all
+        # negative h values (indicating a position above the zero geoid, which is most-likely
+        # intertidal) with a value of 1 m. When interpolating from coarse cmems data, for example,
+        # this ensures we can fill data arrays with sensible values.
+        bathy_nodes_corrected = np.where(self.h < 0, 1.0, self.h)
+        bathy_elements_corrected = np.where(self.hc < 0, 1.0, self.hc)
+        self.z_layers_static = -bathy_nodes_corrected[:, np.newaxis] * self.sigma_layers
+        self.zc_layers_static = -bathy_elements_corrected[:, np.newaxis] * self.sigmac_layers
+        self.z_levels_static = -bathy_nodes_corrected[:, np.newaxis] * self.sigma_levels
+        self.zc_levels_static = -bathy_elements_corrected[:, np.newaxis] * self.sigmac_levels
 
-    def get_interpolation_coordinates(self, grid_position: str, dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
+    def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: str,
+                                      horizontal_coordinate_system: str = "geographic",
+                                      vertical_coordinate_system: str = "z",
+                                      dates: Optional[np.ndarray] = None) -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
-            grid_position: The grid position ('node' or 'element') for which to retrieve
-                interpolation coordinates.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
+            vertical_position: Whether depth coordinates are at layer centres or layer interfaces
+                ('layer_centre' or 'layer_interface').
+            horizontal_coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
+            vertical_coordinate_system: The vertical coordinate system ("z" or "sigma") for the interpolation coordinates.
             dates: Array of datetime objects for temporal interpolation. If None, returns empty array.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
-        if grid_position not in ['node', 'element']:
-            raise ValueError("grid_position must be either 'node' or 'element'")
+        if horizontal_position not in ['node', 'element']:
+            raise PyFVCOM2ValueError("horizontal_position must be either 'node' or 'element'")
 
-        if grid_position == 'node':
-            lons = self.lon
-            lats = self.lat
-            sigma_layers = self.sigma_layers.T
-            bathy = self.h
-        else:  # grid_position == 'element'
-            lons = self.lonc
-            lats = self.latc
-            sigma_layers = self.sigmac_layers.T
-            bathy = self.hc
+        if vertical_position not in ['layer_centre', 'layer_interface']:
+            raise PyFVCOM2ValueError("vertical_position must be either 'layer_centre' or 'layer_interface'")
 
-        # Set zeta to zero for depth calculation (no free surface displacement)
-        zeta = np.zeros_like(bathy)
+        if horizontal_coordinate_system not in ['geographic', 'cartesian']:
+            raise PyFVCOM2ValueError("coordinate_system must be either 'geographic' or 'cartesian'")
 
-        # Compute depths from sigma coordinates
-        depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
+        if vertical_coordinate_system not in ['z', 'sigma']:
+            raise PyFVCOM2ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+
+        if horizontal_position == 'node':
+            if horizontal_coordinate_system == 'geographic':
+                x1 = self.lon_nodes
+                x2 = self.lat_nodes
+            else:  # cartesian
+                x1 = self.x
+                x2 = self.y
+            if vertical_position == 'layer_interface':
+                if vertical_coordinate_system == 'z':
+                    x3 = self.z_levels_static.T
+                else:  # 'sigma'
+                    x3 = self.sigma_levels.T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self.z_layers_static.T
+                else:  # 'sigma'
+                    x3 = self.sigma_layers.T
+        else:  # horizontal_position == 'element'
+            if horizontal_coordinate_system == 'geographic':
+                x1 = self.lon_elements
+                x2 = self.lat_elements
+            else:  # cartesian
+                x1 = self.xc
+                x2 = self.yc
+            if vertical_position == 'layer_interface':
+                if vertical_coordinate_system == 'z':
+                    x3 = self.zc_levels_static.T
+                else:  # 'sigma'
+                    x3 = self.sigmac_levels.T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self.zc_layers_static.T
+                else:  # 'sigma'
+                    x3 = self.sigmac_layers.T
 
         # Use provided dates or empty array
         if dates is None:
             dates = np.array([])
 
-        return InterpolationCoordinates(dates, depths, lats, lons)
+        return InterpolationCoordinates(dates, x3, x2, x1, horizontal_coordinate_system=horizontal_coordinate_system, vertical_coordinate_system=vertical_coordinate_system)
 
 
 def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_system: str,

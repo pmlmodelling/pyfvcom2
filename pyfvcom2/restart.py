@@ -93,8 +93,9 @@ def write_restart(
                 # Update the time variables in the output dataset
                 if time_var_name == "Times":
                     # Handle Times as a string/character variable
-                    # NetCDF4 expects strings to be encoded as bytes for character arrays
-                    output_ds.variables[time_var_name][:] = stringtochar(np.array(new_times, 'S26'))
+                    date_str_len = template_var.shape[-1]
+                    char_array = np.array([list(s.ljust(date_str_len)[:date_str_len]) for s in new_times], dtype='S1')
+                    output_ds.variables[time_var_name][:] = char_array
                 else:
                     # Handle numeric time variables (time, Itime)
                     output_ds.variables[time_var_name][:] = np.asarray(

@@ -1,6 +1,7 @@
 import os
 import numpy as np
 from datetime import datetime
+from typing import Optional
 
 from pyfvcom2.fvcom_writer import FVCOMWriter
 
@@ -12,6 +13,8 @@ from .grid import Grid, OpenBoundary
 from .grid import find_connected_elements
 from .coordinates import sigma_to_z_coords
 from .ocean import zbar
+from .exceptions import PyFVCOM2ValueError
+
 
 __all__ = ["GridBand", "Nest", "NestManager"]
 
@@ -302,51 +305,82 @@ class NestManager:
 
         return np.array(all_element_weights, dtype=np.float32)
 
-    def get_interpolation_coordinates(self, grid_position: str) -> InterpolationCoordinates:
+    def get_interpolation_coordinates(self, horizontal_position: str,
+                                      vertical_position: str,
+                                      horizontal_coordinate_system: Optional[str] = "geographic",
+                                      vertical_coordinate_system: Optional[str] = "z") -> InterpolationCoordinates:
         """Get interpolation coordinates for a specific grid position.
 
         Args:
-            grid_position: The grid position ('node' or 'element') for which to retrieve
-            interpolation coordinates.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
+            vertical_position: Whether depth coordinates are at layer centres or layer interfaces
+                ('layer_centre' or 'layer_interface').
+            horizontal_coordinate_system: The coordinate system ("geographic" or "cartesian") for the interpolation coordinates.
+            vertical_coordinate_system: The vertical coordinate system ("z" or "sigma") for the interpolation coordinates.
 
         Returns:
             InterpolationCoordinates: The interpolation coordinates for the specified grid position.
         """
-        if grid_position not in ['node', 'element']:
-            raise ValueError("grid_position must be either 'node' or 'element'")
+        if horizontal_position not in ['node', 'element']:
+          raise PyFVCOM2ValueError("horizontal_position must be either 'node' or 'element'")
 
-        if grid_position == 'node':
+        if vertical_position not in ['layer_centre', 'layer_interface']:
+            raise PyFVCOM2ValueError("vertical_position must be either 'layer_centre' or 'layer_interface'")
+
+        if horizontal_coordinate_system not in ["geographic", "cartesian"]:
+            raise PyFVCOM2ValueError("horizontal_coordinate_system must be either 'geographic' or 'cartesian'")
+
+        if vertical_coordinate_system not in ["z", "sigma"]:
+            raise PyFVCOM2ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+
+        if horizontal_position == 'node':
             indices = self.get_all_nest_nodes()
-            lons = self._grid_ref.lon_nodes[indices]
-            lats = self._grid_ref.lat_nodes[indices]
-            sigma_layers = self._grid_ref.sigma_layers_nodes[indices, :].T
-            bathy = self._grid_ref.bathy_nodes[indices]
-        else:  # grid_position == 'element'
+            if horizontal_coordinate_system == "geographic":
+                x1 = self._grid_ref.lon_nodes[indices]
+                x2 = self._grid_ref.lat_nodes[indices]
+            else:  # cartesian
+                x1 = self._grid_ref.x[indices]
+                x2 = self._grid_ref.y[indices]
+            if vertical_position == 'layer_interface':
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.z_levels_static[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigma_levels[indices, :].T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.z_layers_static[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigma_layers[indices, :].T
+        else:  # horizontal_position == 'element'
             indices = self.get_all_nest_elements()
-            lons = self._grid_ref.lon_elements[indices]
-            lats = self._grid_ref.lat_elements[indices]
-            sigma_layers = self._grid_ref.sigma_layers_elements[indices, :].T
-            bathy = self._grid_ref.bathy_elements[indices]
+            if horizontal_coordinate_system == "geographic":
+                x1 = self._grid_ref.lon_elements[indices]
+                x2 = self._grid_ref.lat_elements[indices]
+            else:  # cartesian
+                x1 = self._grid_ref.xc[indices]
+                x2 = self._grid_ref.yc[indices]
+            if vertical_position == 'layer_interface':
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.zc_levels_static[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigmac_levels[indices, :].T
+            else:  # 'layer_centre'
+                if vertical_coordinate_system == 'z':
+                    x3 = self._grid_ref.zc_layers_static[indices, :].T
+                else:  # 'sigma'
+                    x3 = self._grid_ref.sigmac_layers[indices, :].T
 
-        # Ignore temporal variations in zeta and set it to zero. This is just to get the actual depth
-        # of sigma levels/layers for interpolating vertically. Given CMEMS data has already been interpolated
-        # onto fixed depth levels, I think this simplification is acceptable.
-        zeta = np.zeros_like(bathy)
+        return InterpolationCoordinates(self._dates, x3, x2, x1, horizontal_coordinate_system=horizontal_coordinate_system, vertical_coordinate_system=vertical_coordinate_system)
 
-        # Compute depths
-        depths = sigma_to_z_coords(sigma_layers, zeta, bathy)
-
-        return InterpolationCoordinates(self._dates, depths, lats, lons)
-
-    def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, grid_position: str) -> None:
+    def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, horizontal_position: str) -> None:
         """ Add forcing data for the nests
 
         Args:
             interpolator: Interpolator instance to use for interpolation.
             fvcom_var_name: FVCOM name for the forcing variable.
-            grid_position: The grid position ('node' or 'element') for which to add forcing data.
+            horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
         """
-        interpolation_coords = self.get_interpolation_coordinates(grid_position)
+        interpolation_coords = self.get_interpolation_coordinates(horizontal_position, 'layer_centre')
         forcing_data = interpolator.interpolate(interpolation_coords, fvcom_var_name)
         self._forcing_data[fvcom_var_name] = forcing_data
 

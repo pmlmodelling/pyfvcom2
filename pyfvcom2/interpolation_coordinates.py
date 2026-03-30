@@ -6,45 +6,87 @@ __all__ = ["InterpolationCoordinates"]
 
 
 class InterpolationCoordinates:
-    def __init__(self, dates: np.ndarray, depths: np.ndarray, lats: np.ndarray, lons: np.ndarray):
-        """Initialize the InterpolationCoordinates with date, depth, latitude, and longitude arrays.
+    def __init__(
+        self, dates: np.ndarray, x3: np.ndarray, x2: np.ndarray, x1: np.ndarray,
+        horizontal_coordinate_system: str, vertical_coordinate_system: str
+    ):
+        """Initialize the InterpolationCoordinates with date, x3, x2, and x1 arrays.
+
+        The date array should be 1D. The x2 and x1 arrays should also be 1D and of the same
+        length - representing the horizontal points (see args below). For FVCOM 3D variables, the length of the x1 and
+        x2 arrays will be either the number of nodes or elements in the FVCOM grid, depending on whether the
+        variable is node-based or element-based. The x3 array corresponds to depth, and should be 2D, with shape (n_depths, n_horizontal_points),
+        where n_horizontal_points is the length of the x2/x1 arrays. For regularly gridded data sources,
+        the x2 and x1 arrays must be converted into 1D arrays representing all horizontal points in the grid.
 
         Args:
             dates (np.ndarray): 1D array of datetime objects.
-            depths (np.ndarray): 1D array of depth values.
-            lats (np.ndarray): 1D array of latitude values.
-            lons (np.ndarray): 1D array of longitude values.
+            x3 (np.ndarray): 2D array of x3 values (typically depth; shape: n_depths x n_horizontal_points).
+            x2 (np.ndarray): 1D array of x2 values (typically y or latitude).
+            x1 (np.ndarray): 1D array of x1 values (typically x or longitude).
+            horizontal_coordinate_system (str): Coordinate system of the x1 and x2 arrays ("geographic", "cartesian").
+            vertical_coordinate_system (str): Coordinate system of the x3 array ("z", "sigma").
         """
         self._dates = dates
-        self._depths = depths
-        self._lats = lats
-        self._lons = lons
-    
+        self._x3 = x3
+        self._x2 = x2
+        self._x1 = x1
+        if horizontal_coordinate_system not in ["geographic", "cartesian"]:
+            raise ValueError("horizontal_coordinate_system must be either 'geographic' or 'cartesian'")
+        if vertical_coordinate_system not in ["z", "sigma"]:
+            raise ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+        self._horizontal_coordinate_system = horizontal_coordinate_system
+        self._vertical_coordinate_system = vertical_coordinate_system
+
     # Add getters and setters for each attribute if needed
     @property
     def dates(self):
         return self._dates
+
     @dates.setter
     def dates(self, value):
         self._dates = value
 
     @property
-    def depths(self):
-        return self._depths
-    @depths.setter
-    def depths(self, value):
-        self._depths = value
+    def x3(self):
+        return self._x3
+
+    @x3.setter
+    def x3(self, value):
+        self._x3 = value
 
     @property
-    def lats(self):
-        return self._lats
-    @lats.setter
-    def lats(self, value):
-        self._lats = value
+    def x2(self):
+        return self._x2
+
+    @x2.setter
+    def x2(self, value):
+        self._x2 = value
 
     @property
-    def lons(self): 
-        return self._lons
-    @lons.setter
-    def lons(self, value):
-        self._lons = value
+    def x1(self):
+        return self._x1
+
+    @x1.setter
+    def x1(self, value):
+        self._x1 = value
+    
+    @property
+    def horizontal_coordinate_system(self):
+        return self._horizontal_coordinate_system
+
+    @horizontal_coordinate_system.setter
+    def horizontal_coordinate_system(self, value):
+        if value not in ["geographic", "cartesian"]:
+            raise ValueError("horizontal_coordinate_system must be either 'geographic' or 'cartesian'")
+        self._horizontal_coordinate_system = value
+
+    @property
+    def vertical_coordinate_system(self):
+        return self._vertical_coordinate_system
+
+    @vertical_coordinate_system.setter
+    def vertical_coordinate_system(self, value):
+        if value not in ["z", "sigma"]:
+            raise ValueError("vertical_coordinate_system must be either 'z' or 'sigma'")
+        self._vertical_coordinate_system = value
