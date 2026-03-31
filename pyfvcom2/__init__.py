@@ -73,6 +73,7 @@ from .interpolation import (
     Interpolator,
     CMEMSInterpolator,
     FVCOMInterpolator,
+    TPXOInterpolator,
 )
 
 # Import grid functionality

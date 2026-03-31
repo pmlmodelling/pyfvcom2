@@ -9,12 +9,13 @@ from matplotlib.tri import Triangulation, LinearTriInterpolator
 from typing import Optional
 
 from .cmems_reader import CMEMSReader, default_fvcom_to_cmems_var_names
-from .fvcom_reader import FVCOMReader
+from .coordinates import sigma_to_z_coords, pol2cart, cart2pol
 from .exceptions import PyFVCOM2ValueError
+from .fvcom_reader import FVCOMReader
 from .interpolation_coordinates import InterpolationCoordinates
-from .coordinates import sigma_to_z_coords
+from .tide_reader import HarmonicsData
 
-__all__ = ["InterpolationCoordinates", "Interpolator", "CMEMSInterpolator", "FVCOMInterpolator"]
+__all__ = ["InterpolationCoordinates", "Interpolator", "CMEMSInterpolator", "FVCOMInterpolator", "TPXOInterpolator"]
 
 
 class Interpolator(ABC):
@@ -709,4 +710,133 @@ class FVCOMInterpolator(Interpolator):
         mask = triangulation.get_trifinder()(coordinates.x1, coordinates.x2) != -1
 
         return mask
+
+
+class TPXOInterpolator(Interpolator):
+    """TPXO tidal harmonics interpolator.
+
+    Interpolates TPXO tidal harmonic amplitudes and phases from the regular
+    TPXO grid onto target positions (e.g., FVCOM open boundary nodes or elements).
+
+    Phase interpolation is handled by decomposing amplitude/phase into two
+    cartesian components before interpolation, then converting back. This
+    avoids artifacts from the 360-to-0 degree phase wrapping discontinuity.
+
+    Longitude convention mismatches between the TPXO grid (often 0-360) and the
+    target positions (which may use -180 to 180) are detected and corrected
+    automatically.
+
+    Args:
+        harmonics_data: Pre-loaded harmonics data from a TPXOHarmonicsReader
+            or TPXOComplexHarmonicsReader.
+        interp_method: Interpolation method passed to scipy's
+            RegularGridInterpolator. Defaults to 'linear'.
+    """
+
+    def __init__(self, harmonics_data: HarmonicsData, interp_method: str = 'linear'):
+        super().__init__()
+        self.harmonics_data = harmonics_data
+        self.interp_method = interp_method
+
+    def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str = None) -> HarmonicsData:
+        """Interpolate TPXO harmonics onto target positions.
+
+        Args:
+            coordinates: Target positions for interpolation. Uses x1 (longitude)
+                and x2 (latitude).
+            fvcom_var_name: Not used for TPXO interpolation. Included for
+                compatibility with the Interpolator interface.
+
+        Returns:
+            HarmonicsData with amplitudes and phases interpolated to the target
+            positions, each shaped (n_points, n_constituents).
+        """
+        target_lon = coordinates.x1
+        target_lat = coordinates.x2
+
+        harmonics_lon = np.array(self.harmonics_data.longitude, copy=True)
+        harmonics_lat = np.array(self.harmonics_data.latitude, copy=True)
+        amplitudes = np.asarray(self.harmonics_data.amplitudes)
+        phases = np.asarray(self.harmonics_data.phases)
+
+        # RegularGridInterpolator requires 1D coordinate arrays
+        if harmonics_lon.ndim != 1 or harmonics_lat.ndim != 1:
+            harmonics_lon = np.unique(harmonics_lon)
+            harmonics_lat = np.unique(harmonics_lat)
+
+        # Convert amplitude/phase to cartesian components to avoid
+        # phase wrapping artifacts during interpolation. The components
+        # are given the names "harmonics_component_1" and "harmonics_component_2".
+        harmonics_component_1, harmonics_component_2 = pol2cart(amplitudes, phases, degrees=True)
+
+        # Align longitude conventions between source and target grids
+        harmonics_lon, harmonics_component_1, harmonics_component_2 = self._align_longitudes(
+            target_lon, harmonics_lon, harmonics_component_1, harmonics_component_2
+        )
+
+        # Interpolate each constituent onto the target positions
+        n_constituents = amplitudes.shape[0]
+        n_points = len(target_lon)
+        interp_component_1 = np.empty((n_constituents, n_points))
+        interp_component_2 = np.empty((n_constituents, n_points))
+
+        for i in range(n_constituents):
+            comp_1_interpolator = interpolate.RegularGridInterpolator(
+                (harmonics_lon, harmonics_lat), harmonics_component_1[i],
+                method=self.interp_method, fill_value=None
+            )
+            comp_2_interpolator = interpolate.RegularGridInterpolator(
+                (harmonics_lon, harmonics_lat), harmonics_component_2[i],
+                method=self.interp_method, fill_value=None
+            )
+            interp_component_1[i] = comp_1_interpolator((target_lon, target_lat))
+            interp_component_2[i] = comp_2_interpolator((target_lon, target_lat))
+
+        # Convert back to amplitude and phase
+        interp_amplitudes, interp_phases = cart2pol(interp_component_1, interp_component_2, degrees=True)
+
+        # Transpose to (n_points, n_constituents) to match predict_tide expectations
+        return HarmonicsData(
+            longitude=target_lon,
+            latitude=target_lat,
+            amplitudes=interp_amplitudes.T,
+            phases=interp_phases.T,
+            constituents=self.harmonics_data.constituents,
+        )
+
+    @staticmethod
+    def _align_longitudes(target_lon, harmonics_lon, harmonics_component_1, harmonics_component_2):
+        """Align harmonics longitude convention with target positions.
+
+        Detects whether the harmonics and target use different longitude
+        conventions (0-360 vs -180 to 180) and shifts the harmonics data
+        accordingly. The longitude array is then sorted to ensure it is
+        monotonically increasing, as required by RegularGridInterpolator.
+
+        Args:
+            target_lon: Target longitude positions.
+            harmonics_lon: Harmonics grid longitudes (1D).
+            harmonics_component_1: First cartesian component, shape (n_const, n_lon, n_lat).
+            harmonics_component_2: Second cartesian component, shape (n_const, n_lon, n_lat).
+
+        Returns:
+            Tuple of (harmonics_lon, harmonics_component_1, harmonics_component_2)
+            with aligned and sorted longitudes.
+        """
+        if np.any(harmonics_lon > 180) and np.any(target_lon < 0):
+            harmonics_lon = np.where(
+                harmonics_lon > 180, harmonics_lon - 360, harmonics_lon
+            )
+        elif np.any(harmonics_lon < 0) and np.any(target_lon > 180):
+            harmonics_lon = np.where(
+                harmonics_lon < 0, harmonics_lon + 360, harmonics_lon
+            )
+
+        # Sort so longitudes are monotonically increasing
+        sort_idx = np.argsort(harmonics_lon)
+        harmonics_lon = harmonics_lon[sort_idx]
+        harmonics_component_1 = harmonics_component_1[:, sort_idx, :]
+        harmonics_component_2 = harmonics_component_2[:, sort_idx, :]
+
+        return harmonics_lon, harmonics_component_1, harmonics_component_2
 

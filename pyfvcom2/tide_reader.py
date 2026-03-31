@@ -137,12 +137,12 @@ class FVCOMHarmonicsReader(HarmonicsReader):
             const_indices = [constituent_names.index(i) for i in requested_constituents]
 
             # Read coordinate data
-            lons = tides[var_names.lon_name].data[:]
-            lats = tides[var_names.lat_name].data[:]
+            lons = tides[var_names.lon_var_name].data[:]
+            lats = tides[var_names.lat_var_name].data[:]
 
             # Read amplitude and phase data
-            amplitudes = tides[var_names.amplitude_name].isel(nconsts=const_indices)
-            phases = tides[var_names.phase_name].isel(nconsts=const_indices)
+            amplitudes = tides[var_names.amplitude_var_name].isel(nconsts=const_indices)
+            phases = tides[var_names.phase_var_name].isel(nconsts=const_indices)
 
             # If necessary, reorder the array so that constiuents are the first dimension
             amplitudes = amplitudes.transpose("nconsts", ...)
@@ -189,12 +189,12 @@ class TPXOHarmonicsReader(HarmonicsReader):
             const_indices = [constituent_names.index(i) for i in requested_constituents]
 
             # Read coordinate data
-            lons = tides[var_names.lon_name].data[:]
-            lats = tides[var_names.lat_name].data[:]
+            lons = tides[var_names.lon_var_name].data[:]
+            lats = tides[var_names.lat_var_name].data[:]
 
             # Read amplitude and phase data
-            amplitudes = tides[var_names.amplitude_name].isel(nc=const_indices)
-            phases = tides[var_names.phase_name].isel(nc=const_indices)
+            amplitudes = tides[var_names.amplitude_var_name].isel(nc=const_indices)
+            phases = tides[var_names.phase_var_name].isel(nc=const_indices)
 
             # If necessary, reorder the array so that constiuents are the first dimension
             amplitudes = amplitudes.transpose("nc", ...)
@@ -241,12 +241,12 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
             const_indices = [constituent_names.index(i) for i in requested_constituents]
 
             # Read coordinate data
-            lons = tides[var_names.lon_name].data[:]
-            lats = tides[var_names.lat_name].data[:]
+            lons = tides[var_names.lon_var_name].data[:]
+            lats = tides[var_names.lat_var_name].data[:]
 
             # Read amplitude and phase data
-            real = tides[var_names.part1_name].isel(nc=const_indices)
-            imag = tides[var_names.part2_name].isel(nc=const_indices)
+            real = tides[var_names.part1_var_name].isel(nc=const_indices)
+            imag = tides[var_names.part2_var_name].isel(nc=const_indices)
 
             # If necessary, reorder the array so that constiuents are the first dimension
             real = real.transpose("nc", ...)
