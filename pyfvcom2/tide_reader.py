@@ -3,6 +3,7 @@ import numpy as np
 from typing import NamedTuple, Optional, List
 from abc import ABC, abstractmethod
 from netCDF4 import Dataset
+from scipy.spatial import cKDTree
 from .exceptions import PyFVCOM2ValueError
 
 __all__ = [
@@ -104,6 +105,55 @@ class HarmonicsReader(ABC):
                 f"The following requested constituents are not available in the file: {missing}"
             )
 
+    @staticmethod
+    def _fill_land_points(lons, lats, amplitudes, phases):
+        """Fill land points (where amplitude is zero) using nearest ocean neighbour.
+
+        TPXO uses 0.0 in amplitude arrays to indicate land. These zeros
+        contaminate the interpolation if left in place. This method identifies
+        land points using a mask where the amplitude is zero for all
+        constituents, then fills them with values from the nearest ocean point
+        using a KD-tree lookup.
+
+        Args:
+            lons: 2D longitude array (nx, ny).
+            lats: 2D latitude array (nx, ny).
+            amplitudes: Amplitude array, shape (n_constituents, nx, ny).
+            phases: Phase array, shape (n_constituents, nx, ny).
+
+        Returns:
+            Tuple of (amplitudes, phases) with land points filled.
+        """
+        amplitudes = np.array(amplitudes, dtype=float)
+        phases = np.array(phases, dtype=float)
+
+        # Build 2D coordinate grids if needed
+        if lons.ndim == 1 and lats.ndim == 1:
+            lon_2d, lat_2d = np.meshgrid(lons, lats, indexing='ij')
+        else:
+            lon_2d, lat_2d = np.asarray(lons), np.asarray(lats)
+
+        # Land mask: True where amplitude is zero for ALL constituents
+        land_mask = np.all(amplitudes == 0.0, axis=0)
+
+        if not np.any(land_mask):
+            return amplitudes, phases
+
+        ocean_mask = ~land_mask
+        ocean_points = np.column_stack((lon_2d[ocean_mask], lat_2d[ocean_mask]))
+        land_points = np.column_stack((lon_2d[land_mask], lat_2d[land_mask]))
+
+        # Find nearest ocean point for each land point
+        tree = cKDTree(ocean_points)
+        _, nearest_idx = tree.query(land_points)
+
+        n_constituents = amplitudes.shape[0]
+        for i in range(n_constituents):
+            amplitudes[i][land_mask] = amplitudes[i][ocean_mask][nearest_idx]
+            phases[i][land_mask] = phases[i][ocean_mask][nearest_idx]
+
+        return amplitudes, phases
+
 
 class FVCOMHarmonicsReader(HarmonicsReader):
     """A class to read FVCOM harmonics data from a netCDF file."""
@@ -197,8 +247,11 @@ class TPXOHarmonicsReader(HarmonicsReader):
             phases = tides[var_names.phase_var_name].isel(nc=const_indices)
 
             # If necessary, reorder the array so that constiuents are the first dimension
-            amplitudes = amplitudes.transpose("nc", ...)
-            phases = phases.transpose("nc", ...)
+            amplitudes = amplitudes.transpose("nc", ...).values
+            phases = phases.transpose("nc", ...).values
+
+        # Fill land points (where amplitude == 0) by interpolation from ocean points
+        amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
 
         return HarmonicsData(
             longitude=lons,
@@ -253,8 +306,11 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
             imag = imag.transpose("nc", ...)
 
         # Convert complex to amplitude and phase
-        amplitudes = np.abs(real + 1j * imag)
-        phases = (np.arctan2(-imag, real) / np.pi) * 180
+        amplitudes = np.array(np.abs(real + 1j * imag), dtype=float)
+        phases = np.array((np.arctan2(-imag, real) / np.pi) * 180, dtype=float)
+
+        # Fill land points (where amplitude == 0) by interpolation from ocean points
+        amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
 
         return HarmonicsData(
             longitude=lons,
