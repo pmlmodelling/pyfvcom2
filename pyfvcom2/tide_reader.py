@@ -82,6 +82,30 @@ class HarmonicsReader(ABC):
         """
         pass
 
+    def _parse_constituents(self, constituents_var):
+        """Parse the constituents variable from the netCDF file to extract available constituent names.
+
+        Args:
+            constituents_var: The xarray DataArray containing constituent names from the netCDF file.
+        Returns:
+            List of available constituent names in the file, formatted as uppercase strings with whitespace stripped.
+        """
+        try:
+            n_const = constituents_var.sizes['nc']
+        except KeyError:
+            n_const = None
+
+        if n_const is None:
+            # Single constituent case - return a list with one name
+            return [constituents_var.data.item().decode().upper().strip()]
+        else:
+            names = []
+            for i in range(n_const):
+                name = constituents_var.data[i].decode().upper().strip()
+                names.append(name)
+
+        return names
+
     def _check_constituents(
         self, requested_constituents: List[str], constituents_var_name
     ):
@@ -93,11 +117,8 @@ class HarmonicsReader(ABC):
         Raises:
             PyFVCOM2ValueError: If any requested constituent is not available in the file.
         """
-        with Dataset(str(self.file_path), "r") as tides:
-            available_constituents = [
-                "".join(i).upper().strip()
-                for i in tides.variables[constituents_var_name][:].astype(str)
-            ]
+        with xr.open_dataset(str(self.file_path)) as tides:
+            available_constituents = self._parse_constituents(tides.variables[constituents_var_name])
 
         missing = [c for c in requested_constituents if c not in available_constituents]
         if missing:
@@ -178,10 +199,7 @@ class FVCOMHarmonicsReader(HarmonicsReader):
 
         with xr.open_dataset(str(self.file_path)) as tides:
             # Read available constituents from file
-            constituent_names = [
-                "".join(i).upper().strip()
-                for i in tides[var_names.constituents_var_name].data[:].astype(str)
-            ]
+            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
 
             # Determine the indices of the requested constituents
             const_indices = [constituent_names.index(i) for i in requested_constituents]
@@ -230,10 +248,7 @@ class TPXOHarmonicsReader(HarmonicsReader):
 
         with xr.open_dataset(str(self.file_path)) as tides:
             # Read available constituents from file
-            constituent_names = [
-                "".join(i).upper().strip()
-                for i in tides[var_names.constituents_var_name].data[:].astype(str)
-            ]
+            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
 
             # Determine the indices of the requested constituents
             const_indices = [constituent_names.index(i) for i in requested_constituents]
@@ -243,12 +258,15 @@ class TPXOHarmonicsReader(HarmonicsReader):
             lats = tides[var_names.lat_var_name].data[:]
 
             # Read amplitude and phase data
-            amplitudes = tides[var_names.amplitude_var_name].isel(nc=const_indices)
-            phases = tides[var_names.phase_var_name].isel(nc=const_indices)
-
-            # If necessary, reorder the array so that constiuents are the first dimension
-            amplitudes = amplitudes.transpose("nc", ...).values
-            phases = phases.transpose("nc", ...).values
+            if "nc" in tides.dims:
+                amplitudes = tides[var_names.amplitude_var_name].isel(nc=const_indices)
+                phases = tides[var_names.phase_var_name].isel(nc=const_indices)
+                amplitudes = amplitudes.transpose("nc", ...).values
+                phases = phases.transpose("nc", ...).values
+            else:
+                # Single constituent file — no nc dimension
+                amplitudes = tides[var_names.amplitude_var_name].values[np.newaxis, ...]
+                phases = tides[var_names.phase_var_name].values[np.newaxis, ...]
 
         # Fill land points (where amplitude == 0) by interpolation from ocean points
         amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
@@ -284,11 +302,7 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
         )
 
         with xr.open_dataset(str(self.file_path)) as tides:
-            # Read available constituents from file
-            constituent_names = [
-                "".join(i).upper().strip()
-                for i in tides[var_names.constituents_var_name].data[:].astype(str)
-            ]
+            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
 
             # Determine the indices of the requested constituents
             const_indices = [constituent_names.index(i) for i in requested_constituents]
@@ -298,12 +312,15 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
             lats = tides[var_names.lat_var_name].data[:]
 
             # Read amplitude and phase data
-            real = tides[var_names.part1_var_name].isel(nc=const_indices)
-            imag = tides[var_names.part2_var_name].isel(nc=const_indices)
-
-            # If necessary, reorder the array so that constiuents are the first dimension
-            real = real.transpose("nc", ...)
-            imag = imag.transpose("nc", ...)
+            if "nc" in tides.dims:
+                real = tides[var_names.part1_var_name].isel(nc=const_indices)
+                imag = tides[var_names.part2_var_name].isel(nc=const_indices)
+                real = real.transpose("nc", ...).values
+                imag = imag.transpose("nc", ...).values
+            else:
+                # Single constituent file — no nc dimension
+                real = tides[var_names.part1_var_name].values[np.newaxis, ...]
+                imag = tides[var_names.part2_var_name].values[np.newaxis, ...]
 
         # Convert complex to amplitude and phase
         amplitudes = np.array(np.abs(real + 1j * imag), dtype=float)
