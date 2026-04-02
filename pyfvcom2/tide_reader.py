@@ -1,6 +1,6 @@
 import xarray as xr
 import numpy as np
-from typing import NamedTuple, Optional, List, Tuple
+from typing import NamedTuple, Optional, List, Tuple, Dict, Union
 from abc import ABC, abstractmethod
 from netCDF4 import Dataset
 from scipy.spatial import cKDTree
@@ -71,7 +71,15 @@ HarmonicsData = NamedTuple(
 class HarmonicsReader(ABC):
     """Abstract base class for reading tidal harmonics data from netCDF files."""
 
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: Union[str, Dict[str, str]]):
+        """Initialise the reader.
+
+        Args:
+            file_path: Path to the harmonics data file. Either a single
+                path (str) when all constituents are in one file, or a
+                dict mapping constituent names (uppercase) to file paths
+                when each constituent is stored in a separate file.
+        """
         self.file_path = file_path
 
     @abstractmethod
@@ -115,22 +123,39 @@ class HarmonicsReader(ABC):
     def _check_constituents(
         self, requested_constituents: List[str], constituents_var_name
     ):
-        """Check if the requested constituents are available in the file.
+        """Check if the requested constituents are available in the file(s).
 
         Args:
             requested_constituents: List of tidal constituent names to read.
             constituents_var_name: Name of the variable in the netCDF file that contains constituent names.
         Raises:
-            PyFVCOM2ValueError: If any requested constituent is not available in the file.
+            PyFVCOM2ValueError: If any requested constituent is not available in the file(s).
         """
-        with xr.open_dataset(str(self.file_path)) as tides:
-            available_constituents = self._parse_constituents(tides.variables[constituents_var_name])
+        if isinstance(self.file_path, dict):
+            # Per-constituent files: each key is a constituent name
+            missing = [c for c in requested_constituents if c not in self.file_path]
+            if missing:
+                raise PyFVCOM2ValueError(
+                    f"The following requested constituents have no file path entry: {missing}"
+                )
+            # Also verify each file actually contains the named constituent
+            for constituent in requested_constituents:
+                with xr.open_dataset(str(self.file_path[constituent])) as tides:
+                    available = self._parse_constituents(tides.variables[constituents_var_name])
+                if constituent not in available:
+                    raise PyFVCOM2ValueError(
+                        f"Constituent '{constituent}' not found in file "
+                        f"'{self.file_path[constituent]}'. Available: {available}"
+                    )
+        else:
+            with xr.open_dataset(str(self.file_path)) as tides:
+                available_constituents = self._parse_constituents(tides.variables[constituents_var_name])
 
-        missing = [c for c in requested_constituents if c not in available_constituents]
-        if missing:
-            raise PyFVCOM2ValueError(
-                f"The following requested constituents are not available in the file: {missing}"
-            )
+            missing = [c for c in requested_constituents if c not in available_constituents]
+            if missing:
+                raise PyFVCOM2ValueError(
+                    f"The following requested constituents are not available in the file: {missing}"
+                )
 
     @staticmethod
     def _fill_land_points(lons, lats, amplitudes, phases):
@@ -456,8 +481,38 @@ class FVCOMHarmonicsReader(HarmonicsReader):
 class TPXOHarmonicsReader(HarmonicsReader):
     """A class to read TPXO harmonics data stored as amplitude and phase from a netCDF file."""
 
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: Union[str, Dict[str, str]]):
         super().__init__(file_path)
+
+    def _read_single_file(self, file_path, requested_constituents, var_names):
+        """Read amplitude and phase data from a single file.
+
+        Returns:
+            Tuple of (lons, lats, amplitudes, phases) where amplitudes
+            and phases have shape (n_constituents, nx, ny).
+        """
+        with xr.open_dataset(str(file_path)) as tides:
+            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
+            const_indices = [constituent_names.index(i) for i in requested_constituents]
+
+            lons = tides[var_names.lon_var_name].data[:]
+            lats = tides[var_names.lat_var_name].data[:]
+
+            if "nc" in tides.dims:
+                amplitudes = tides[var_names.amplitude_var_name].isel(nc=const_indices)
+                phases = tides[var_names.phase_var_name].isel(nc=const_indices)
+                amplitudes = amplitudes.transpose("nc", ...).values
+                phases = phases.transpose("nc", ...).values
+            else:
+                amplitudes = tides[var_names.amplitude_var_name].values[np.newaxis, ...]
+                phases = tides[var_names.phase_var_name].values[np.newaxis, ...]
+
+            amp_units = tides[var_names.amplitude_var_name].attrs.get('units', 'm')
+            scale = self._get_length_scale_to_metres(amp_units)
+            if scale != 1.0:
+                amplitudes = amplitudes * scale
+
+        return lons, lats, amplitudes, phases
 
     def read_harmonics(
         self, requested_constituents: List[str], var_names: TPXOHarmonicsNames,
@@ -483,33 +538,25 @@ class TPXOHarmonicsReader(HarmonicsReader):
             requested_constituents, var_names.constituents_var_name
         )
 
-        with xr.open_dataset(str(self.file_path)) as tides:
-            # Read available constituents from file
-            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
-
-            # Determine the indices of the requested constituents
-            const_indices = [constituent_names.index(i) for i in requested_constituents]
-
-            # Read coordinate data
-            lons = tides[var_names.lon_var_name].data[:]
-            lats = tides[var_names.lat_var_name].data[:]
-
-            # Read amplitude and phase data
-            if "nc" in tides.dims:
-                amplitudes = tides[var_names.amplitude_var_name].isel(nc=const_indices)
-                phases = tides[var_names.phase_var_name].isel(nc=const_indices)
-                amplitudes = amplitudes.transpose("nc", ...).values
-                phases = phases.transpose("nc", ...).values
-            else:
-                # Single constituent file — no nc dimension
-                amplitudes = tides[var_names.amplitude_var_name].values[np.newaxis, ...]
-                phases = tides[var_names.phase_var_name].values[np.newaxis, ...]
-
-            # Convert amplitude length units to metres
-            amp_units = tides[var_names.amplitude_var_name].attrs.get('units', 'm')
-            scale = self._get_length_scale_to_metres(amp_units)
-            if scale != 1.0:
-                amplitudes = amplitudes * scale
+        if isinstance(self.file_path, dict):
+            # Per-constituent files: read each one individually and stack
+            amp_list, phase_list = [], []
+            lons = lats = None
+            for constituent in requested_constituents:
+                fp = self.file_path[constituent]
+                c_lons, c_lats, c_amp, c_phase = self._read_single_file(
+                    fp, [constituent], var_names
+                )
+                if lons is None:
+                    lons, lats = c_lons, c_lats
+                amp_list.append(c_amp[0])
+                phase_list.append(c_phase[0])
+            amplitudes = np.stack(amp_list, axis=0)
+            phases = np.stack(phase_list, axis=0)
+        else:
+            lons, lats, amplitudes, phases = self._read_single_file(
+                self.file_path, requested_constituents, var_names
+            )
 
         # Reduce 2-D coordinate arrays to 1-D if applicable
         lons, lats = self._reduce_coords_to_1d(lons, lats)
@@ -545,8 +592,42 @@ class TPXOHarmonicsReader(HarmonicsReader):
 class TPXOComplexHarmonicsReader(HarmonicsReader):
     """A class to read TPXO harmonics data stored as complex (real/imaginary) from a netCDF file."""
 
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: Union[str, Dict[str, str]]):
         super().__init__(file_path)
+
+    def _read_single_file(self, file_path, requested_constituents, var_names):
+        """Read real/imaginary data and coordinates from a single file.
+
+        Returns:
+            Tuple of (lons, lats, real, imag, real_units) where real and
+            imag have shape (n_constituents, nx, ny).
+        """
+        with xr.open_dataset(str(file_path)) as tides:
+            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
+            const_indices = [constituent_names.index(i) for i in requested_constituents]
+
+            lons = tides[var_names.lon_var_name].data[:]
+            lats = tides[var_names.lat_var_name].data[:]
+
+            if "nc" in tides.dims:
+                real = tides[var_names.part1_var_name].isel(nc=const_indices)
+                imag = tides[var_names.part2_var_name].isel(nc=const_indices)
+                real = real.transpose("nc", ...).values
+                imag = imag.transpose("nc", ...).values
+            else:
+                real = tides[var_names.part1_var_name].values[np.newaxis, ...]
+                imag = tides[var_names.part2_var_name].values[np.newaxis, ...]
+
+            real_units = tides[var_names.part1_var_name].attrs.get('units', '')
+            imag_units = tides[var_names.part2_var_name].attrs.get('units', '')
+
+            if real_units != imag_units:
+                raise PyFVCOM2ValueError(
+                    f"Real and imaginary parts have different units: "
+                    f"real units='{real_units}', imag units='{imag_units}'."
+                )
+
+        return lons, lats, real, imag, real_units
 
     def read_harmonics(
         self, requested_constituents: List[str], var_names: TPXOComplexHarmonicsNames,
@@ -589,37 +670,27 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
                 bathy_units = bathy_ds[var_names.bathy_var_name].attrs.get('units', 'm')
                 bathy = self._convert_bathy_to_metres(bathy, bathy_units)
 
-        with xr.open_dataset(str(self.file_path)) as tides:
-            constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
-
-            # Determine the indices of the requested constituents
-            const_indices = [constituent_names.index(i) for i in requested_constituents]
-
-            # Read coordinate data
-            lons = tides[var_names.lon_var_name].data[:]
-            lats = tides[var_names.lat_var_name].data[:]
-
-            # Read real and imaginary data
-            if "nc" in tides.dims:
-                real = tides[var_names.part1_var_name].isel(nc=const_indices)
-                imag = tides[var_names.part2_var_name].isel(nc=const_indices)
-                real = real.transpose("nc", ...).values
-                imag = imag.transpose("nc", ...).values
-            else:
-                # Single constituent file — no nc dimension
-                real = tides[var_names.part1_var_name].values[np.newaxis, ...]
-                imag = tides[var_names.part2_var_name].values[np.newaxis, ...]
-        
-            # Save the units of the real/imaginary parts for later use in transport unit conversion if needed
-            real_units = tides[var_names.part1_var_name].attrs.get('units', '')
-            imag_units = tides[var_names.part2_var_name].attrs.get('units', '')
-
-            # The real units and imaginary units should be the same. Confirm this.
-            if real_units != imag_units:
-                raise PyFVCOM2ValueError(
-                    f"Real and imaginary parts have different units: "
-                    f"real units='{real_units}', imag units='{imag_units}'."
+        if isinstance(self.file_path, dict):
+            # Per-constituent files: read each one individually and stack
+            real_list, imag_list = [], []
+            lons = lats = None
+            real_units = None
+            for constituent in requested_constituents:
+                fp = self.file_path[constituent]
+                c_lons, c_lats, c_real, c_imag, c_units = self._read_single_file(
+                    fp, [constituent], var_names
                 )
+                if lons is None:
+                    lons, lats = c_lons, c_lats
+                    real_units = c_units
+                real_list.append(c_real[0])
+                imag_list.append(c_imag[0])
+            real = np.stack(real_list, axis=0)
+            imag = np.stack(imag_list, axis=0)
+        else:
+            lons, lats, real, imag, real_units = self._read_single_file(
+                self.file_path, requested_constituents, var_names
+            )
 
         # Reduce 2-D coordinate arrays to 1-D if applicable
         lons, lats = self._reduce_coords_to_1d(lons, lats)
@@ -670,7 +741,7 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
         )
 
 
-def create_harmonics_reader(reader_type: str, file_path: str) -> HarmonicsReader:
+def create_harmonics_reader(reader_type: str, file_path: Union[str, Dict[str, str]]) -> HarmonicsReader:
     """Factory function to create the appropriate harmonics reader.
 
     Args:
@@ -678,7 +749,9 @@ def create_harmonics_reader(reader_type: str, file_path: str) -> HarmonicsReader
             - 'fvcom': FVCOMHarmonicsReader
             - 'tpxo': TPXOHarmonicsReader (amplitude/phase format)
             - 'tpxo_complex': TPXOComplexHarmonicsReader (real/imaginary format)
-        file_path: Path to the harmonics data file.
+        file_path: Path to the harmonics data file(s). Either a single
+            path (str) when all constituents are in one file, or a dict
+            mapping constituent names to file paths.
 
     Returns:
         Instance of the appropriate reader subclass.
