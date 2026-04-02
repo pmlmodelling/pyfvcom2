@@ -117,6 +117,9 @@ from .tide_reader import (
     TPXOHarmonicsReader, TPXOComplexHarmonicsReader,
 )
 
+# Import tide prediction and management
+from .tide import TideManager, predict_tide
+
 # Define what gets imported with "from pyfvcom2 import *"
 __all__ = [
     "__version__",
@@ -196,6 +199,8 @@ __all__ = [
     "FVCOMHarmonicsNames", "TPXOHarmonicsNames", "TPXOComplexHarmonicsNames",
     "HarmonicsData", "HarmonicsReader", "FVCOMHarmonicsReader",
     "TPXOHarmonicsReader", "TPXOComplexHarmonicsReader",
+    # Tide prediction and management
+    "TideManager", "predict_tide",
     # Subpackages
     "plotting",
 ]

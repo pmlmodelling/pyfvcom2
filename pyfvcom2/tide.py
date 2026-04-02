@@ -1,4 +1,4 @@
-from exceptions import PyFVCOM2ValueError
+from pyfvcom2.exceptions import PyFVCOM2ValueError
 import pandas
 import numpy as np
 from typing import Optional
@@ -8,9 +8,109 @@ from utide import reconstruct, ut_constants
 from utide.utilities import Bunch
 import multiprocessing
 
+from .interpolation_coordinates import InterpolationCoordinates
+from .tide_reader import HarmonicsData
+
 
 # Modified Julian Day zero point
 MJD_ZERO_POINT = "1858-11-17"
+
+
+class TideManager:
+    """Manages tidal harmonics interpolation and prediction.
+
+    Orchestrates the pipeline from TPXO tidal harmonic data through
+    interpolation onto target positions to tidal time series prediction
+    via UTide.
+
+    Typical usage:
+        1. Create a TideManager with the desired constituents.
+        2. Register TPXOInterpolator instances for each variable (zeta, u, v)
+           via add_interpolator.
+        3. Pass the TideManager to NestManager.add_tidal_data(), which calls
+           predict() for each variable with the appropriate target positions.
+
+    Args:
+        constituents: List of tidal constituent names (e.g. ['M2', 'S2']).
+        parallel: Whether to run UTide predictions in parallel. Default True.
+        pool_size: Number of parallel processes. Default None (use all CPUs).
+    """
+
+    def __init__(self, constituents: list[str], parallel: bool = True,
+                 pool_size: Optional[int] = None):
+        self._constituents = constituents
+        self._parallel = parallel
+        self._pool_size = pool_size
+        self._interpolators = {}
+
+    @property
+    def constituents(self) -> list[str]:
+        """List of tidal constituent names."""
+        return self._constituents
+
+    def add_interpolator(self, variable: str, interpolator) -> None:
+        """Register a TPXOInterpolator for a tidal variable.
+
+        Args:
+            variable: Tidal variable name ('zeta', 'u', or 'v').
+            interpolator: TPXOInterpolator loaded with harmonics data
+                for this variable.
+        """
+        self._interpolators[variable] = interpolator
+
+    def predict(self, variable: str, datetimes: np.ndarray,
+                longitudes: np.ndarray, latitudes: np.ndarray) -> np.ndarray:
+        """Interpolate harmonics onto target positions and predict tides.
+
+        Args:
+            variable: Variable name ('zeta', 'u', or 'v').
+            datetimes: Array of datetime objects for prediction times.
+            longitudes: Target longitude positions.
+            latitudes: Target latitude positions.
+
+        Returns:
+            Predicted tidal time series, shape (n_times, n_points).
+        """
+        if variable not in self._interpolators:
+            raise PyFVCOM2ValueError(
+                f"No interpolator registered for '{variable}'. "
+                f"Call add_interpolator first."
+            )
+
+        interpolated = self._interpolate_harmonics(variable, longitudes, latitudes)
+
+        results = predict_tide(
+            datetimes, self._constituents,
+            interpolated.amplitudes, interpolated.phases,
+            latitudes, self._parallel, self._pool_size
+        )
+
+        return np.asarray(results).T  # (n_times, n_points)
+
+    def _interpolate_harmonics(self, variable: str, longitudes: np.ndarray,
+                               latitudes: np.ndarray) -> HarmonicsData:
+        """Interpolate harmonics onto target positions.
+
+        Args:
+            variable: Variable name.
+            longitudes: Target longitudes.
+            latitudes: Target latitudes.
+
+        Returns:
+            HarmonicsData with amplitudes and phases interpolated to targets.
+        """
+        interpolator = self._interpolators[variable]
+
+        # TPXOInterpolator.interpolate only uses x1 (lon) and x2 (lat)
+        coords = InterpolationCoordinates(
+            dates=np.array([]),
+            x3=np.empty((0, len(longitudes))),
+            x2=latitudes,
+            x1=longitudes,
+            horizontal_coordinate_system='geographic',
+            vertical_coordinate_system='z',
+        )
+        return interpolator.interpolate(coords)
 
 
 def predict_tide(
@@ -92,34 +192,25 @@ def predict_tide(
         pool.close()
 
     # Remove the extended time predictions to return only those for the original datetimes
-    # Generate bool array
-
+    mask = (extended_datetimes >= datetimes[0]) & (extended_datetimes <= datetimes[-1])
+    results = [r[mask] for r in results]
 
     return results
 
 
-def reconstruct_wrapper(
-    lats: np.ndarray,
-    times: np.ndarray,
-    coef: Bunch,
-    amplitudes: np.ndarray,
-    phases: np.ndarray,
-) -> np.ndarray:
+def reconstruct_wrapper(args: tuple) -> np.ndarray:
     """
     For the given time and coefficients (in coef) reconstruct the tidal elevation or current component time
     series at the given latitude.
 
     Args:
-    lats : np.ndarray
-        Latitudes of the positions to predict.
-    times : np.ndarray
-        Array of matplotlib datenums (see `matplotlib.dates.num2date').
-    coef : utide.utilities.Bunch
-        Configuration options for utide.
-    amplitudes : np.ndarray
-        Amplitude of the relevant constituents shaped [nconst].
-    phases : np.ndarray
-        Array of the phase of the relevant constituents shaped [nconst].
+    args : tuple
+        Tuple of (lats, times, coef, amplitudes, phases) where:
+        - lats: Latitude of the position to predict.
+        - times: Array of datenums (days since MJD zero point).
+        - coef: UTide coefficients Bunch.
+        - amplitudes: Amplitude of the relevant constituents shaped [nconst].
+        - phases: Phase of the relevant constituents shaped [nconst].
 
     Returns:
     zeta : np.ndarray
@@ -127,9 +218,11 @@ def reconstruct_wrapper(
 
     Notes
     -----
-    Uses utide.reconstruct() for the predicted tide.
+    Uses utide.reconstruct() for the predicted tide. Accepts a single tuple
+    argument for compatibility with multiprocessing.Pool.map.
 
     """
+    lats, times, coef, amplitudes, phases = args
     coef["aux"]["lat"] = lats
     coef["A"] = amplitudes
     coef["g"] = phases

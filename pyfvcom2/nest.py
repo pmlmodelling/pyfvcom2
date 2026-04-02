@@ -14,6 +14,7 @@ from .grid import find_connected_elements
 from .coordinates import sigma_to_z_coords
 from .ocean import zbar
 from .exceptions import PyFVCOM2ValueError
+from .tide import TideManager
 
 
 __all__ = ["GridBand", "Nest", "NestManager"]
@@ -132,6 +133,9 @@ class NestManager:
 
         # Initialise empty dict to hold forcing data        
         self._forcing_data = {}
+
+        # Initialise empty dict to hold tidal data
+        self._tidal_data = {}
 
     def set_dates(self, dates: list[datetime]) -> None:
         """ Set the dates for the forcing data
@@ -372,6 +376,71 @@ class NestManager:
 
         return InterpolationCoordinates(self._dates, x3, x2, x1, horizontal_coordinate_system=horizontal_coordinate_system, vertical_coordinate_system=vertical_coordinate_system)
 
+    def add_tidal_data(self, tide_manager: TideManager) -> None:
+        """Add tidal forcing data using a TideManager.
+
+        Computes tidal predictions for zeta at nodes, and u, v at element
+        centres, for all nest positions at the dates set via set_dates.
+        The barotropic tidal velocities are also stored as ua and va.
+
+        Args:
+            tide_manager: TideManager with interpolators registered for
+                the required variables (zeta, u, v).
+        """
+        if not self._dates:
+            raise PyFVCOM2ValueError(
+                "Dates must be set before adding tidal data. Call set_dates first."
+            )
+
+        datetimes = np.array(self._dates)
+
+        # Predict zeta at node positions
+        node_indices = self.get_all_nest_nodes()
+        node_lons = self._grid_ref.lon_nodes[node_indices]
+        node_lats = self._grid_ref.lat_nodes[node_indices]
+        self._tidal_data['zeta'] = tide_manager.predict(
+            'zeta', datetimes, node_lons, node_lats
+        )
+
+        # Predict u and v at element centre positions
+        element_indices = self.get_all_nest_elements()
+        element_lons = self._grid_ref.lon_elements[element_indices]
+        element_lats = self._grid_ref.lat_elements[element_indices]
+        for var in ['u', 'v']:
+            prediction = tide_manager.predict(
+                var, datetimes, element_lons, element_lats
+            )
+            self._tidal_data[var] = prediction
+            # Barotropic tidal velocity equals depth-averaged velocity
+            self._tidal_data[f'{var}a'] = prediction
+
+    def _get_adjusted_data(self, var_name: str, adjust_tides: Optional[list[str]]) -> np.ndarray:
+        """Get forcing data, optionally adjusted by adding tidal predictions.
+
+        For 3D variables (time, depth, points), the 2D tidal prediction is
+        broadcast uniformly across all depth levels.
+
+        Args:
+            var_name: Variable name in _forcing_data.
+            adjust_tides: List of variable names to adjust, or None.
+
+        Returns:
+            Forcing data array, with tidal adjustment if requested.
+        """
+        data = self._forcing_data[var_name]
+        if adjust_tides and var_name in adjust_tides:
+            if var_name not in self._tidal_data:
+                raise PyFVCOM2ValueError(
+                    f"Tidal data for '{var_name}' not available. "
+                    f"Call add_tidal_data first."
+                )
+            tidal = self._tidal_data[var_name]
+            if data.ndim == 3 and tidal.ndim == 2:
+                # Broadcast 2D barotropic tide across depth dimension
+                tidal = tidal[:, np.newaxis, :]
+            data = data + tidal
+        return data
+
     def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, horizontal_position: str) -> None:
         """ Add forcing data for the nests
 
@@ -390,12 +459,17 @@ class NestManager:
             layer_thickness = (self._grid_ref.sigma_levels.T[0:-1, indices] - self._grid_ref.sigma_levels.T[1:, indices])
             self._forcing_data[f'{fvcom_var_name}a'] = zbar(forcing_data, layer_thickness)
 
-    def create_forcing_file(self, output_path: str, nest_type: int, format='NETCDF4', **kwargs) -> None:
+    def create_forcing_file(self, output_path: str, nest_type: int,
+                            adjust_tides: Optional[list[str]] = None,
+                            format='NETCDF4', **kwargs) -> None:
         """ Write the nest forcing data to a NetCDF file
 
         Args:
             output_path: Path to the output NetCDF file.
             nest_type: Type of model nesting.
+            adjust_tides: List of variable names to adjust by adding tidal
+                predictions (e.g. ['zeta', 'u', 'v', 'ua', 'va']). Requires
+                that add_tidal_data has been called first.
             format: NetCDF format to use. Defaults to 'NETCDF4'.
             **kwargs: Additional keyword arguments for writing the forcing file.
         """
@@ -580,21 +654,21 @@ class NestManager:
                     'coordinates': 'time lat lon',
                     'type': 'data',
                     'location': 'node'}
-            nest_ncfile.add_variable('zeta', self._forcing_data['zeta'], 
+            nest_ncfile.add_variable('zeta', self._get_adjusted_data('zeta', adjust_tides), 
                     ['time', 'node'], attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'Vertically Averaged x-velocity',
                     'units': 'meters  s-1',
                     'grid': 'fvcom_grid',
                     'type': 'data'}
-            nest_ncfile.add_variable('ua', self._forcing_data['ua'], 
+            nest_ncfile.add_variable('ua', self._get_adjusted_data('ua', adjust_tides), 
                     ['time', 'nele'], attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'Vertically Averaged y-velocity',
                     'units': 'meters  s-1',
                     'grid': 'fvcom_grid',
                     'type': 'data'}
-            nest_ncfile.add_variable('va', self._forcing_data['va'], 
+            nest_ncfile.add_variable('va', self._get_adjusted_data('va', adjust_tides), 
                     ['time', 'nele'], attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'Eastward Water Velocity',
@@ -604,7 +678,7 @@ class NestManager:
                     'coordinates': 'time siglay latc lonc',
                     'type': 'data',
                     'location': 'face'}
-            nest_ncfile.add_variable('u', self._forcing_data['u'], 
+            nest_ncfile.add_variable('u', self._get_adjusted_data('u', adjust_tides), 
                     ['time', 'siglay', 'nele'], attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'Northward Water Velocity',
@@ -614,7 +688,7 @@ class NestManager:
                     'coordinates': 'time siglay latc lonc',
                     'type': 'data',
                     'location': 'face'}
-            nest_ncfile.add_variable('v', self._forcing_data['v'], 
+            nest_ncfile.add_variable('v', self._get_adjusted_data('v', adjust_tides), 
                     ['time', 'siglay', 'nele'], attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'Temperature',
