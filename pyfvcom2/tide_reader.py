@@ -1,6 +1,6 @@
 import xarray as xr
 import numpy as np
-from typing import NamedTuple, Optional, List
+from typing import NamedTuple, Optional, List, Tuple
 from abc import ABC, abstractmethod
 from netCDF4 import Dataset
 from scipy.spatial import cKDTree
@@ -175,6 +175,141 @@ class HarmonicsReader(ABC):
 
         return amplitudes, phases
 
+    @staticmethod
+    def _reduce_coords_to_1d(lons, lats):
+        """Reduce 2-D coordinate arrays to 1-D if they form a regular grid.
+
+        Some TPXO files store lon/lat as 2-D arrays (one value per grid
+        cell) while others store them as 1-D vectors.  When the arrays
+        are 2-D, the values along one axis should be constant (i.e. a
+        meshgrid).  This method extracts the unique values along each
+        axis and checks that they faithfully reconstruct the original
+        2-D arrays.
+
+        Args:
+            lons: Longitude array (1-D or 2-D).
+            lats: Latitude array (1-D or 2-D).
+
+        Returns:
+            Tuple of (lons_1d, lats_1d).
+
+        Raises:
+            PyFVCOM2ValueError: If the 2-D arrays cannot be reduced to
+                1-D without loss of information.
+        """
+        if lons.ndim == 1 and lats.ndim == 1:
+            return lons, lats
+
+        if lons.ndim != 2 or lats.ndim != 2:
+            raise PyFVCOM2ValueError(
+                f"Expected lon/lat arrays of 1 or 2 dimensions, "
+                f"got lon ndim={lons.ndim}, lat ndim={lats.ndim}."
+            )
+
+        lons_1d = np.unique(lons)
+        lats_1d = np.unique(lats)
+
+        # Verify the 1-D vectors reconstruct the original 2-D arrays
+        lon_2d, lat_2d = np.meshgrid(lons_1d, lats_1d, indexing='ij')
+        if lon_2d.shape != lons.shape or not np.allclose(lon_2d, lons):
+            raise PyFVCOM2ValueError(
+                "Cannot reduce 2-D longitude array to 1-D: the values "
+                "do not form a regular meshgrid."
+            )
+        if lat_2d.shape != lats.shape or not np.allclose(lat_2d, lats):
+            raise PyFVCOM2ValueError(
+                "Cannot reduce 2-D latitude array to 1-D: the values "
+                "do not form a regular meshgrid."
+            )
+
+        return lons_1d, lats_1d
+
+    @staticmethod
+    def _shift_longitudes(lons, *arrays):
+        """Shift longitudes from 0-360 to -180-180 and reorder arrays accordingly.
+
+        If longitudes are already in -180-180, this is a no-op.
+
+        Args:
+            lons: 1-D array of longitudes.
+            *arrays: Data arrays whose longitude axis (axis=1 for 3-D,
+                axis=0 for 2-D) will be reordered to match the sorted
+                longitudes.
+
+        Returns:
+            Tuple of (lons, *arrays) with longitudes shifted and arrays
+            reordered.
+        """
+        if lons.max() <= 180.0:
+            return (lons, *arrays)
+
+        lons = np.where(lons > 180, lons - 360, lons)
+        sort_idx = np.argsort(lons)
+        lons = lons[sort_idx]
+
+        reordered = []
+        for arr in arrays:
+            if arr.ndim == 3:
+                reordered.append(arr[:, sort_idx, :])
+            elif arr.ndim == 2:
+                reordered.append(arr[sort_idx, :])
+            else:
+                reordered.append(arr[sort_idx])
+        return (lons, *reordered)
+
+    @staticmethod
+    def _compute_bbox_indices(
+        lons_1d: np.ndarray,
+        lats_1d: np.ndarray,
+        bbox: Tuple[float, float, float, float],
+        margin: float = 1.0,
+    ) -> Tuple[slice, slice, np.ndarray, np.ndarray]:
+        """Compute index slices that subset 1-D lon/lat arrays to a bounding box.
+
+        Longitudes are expected to already be in -180–180 (see
+        ``_shift_longitudes``).  The bbox should use the same convention.
+
+        Args:
+            lons_1d: 1-D array of longitudes (must be in -180 to 180).
+            lats_1d: 1-D array of latitudes from the file.
+            bbox: (lon_min, lon_max, lat_min, lat_max) in -180 to 180.
+            margin: Extra padding in degrees added around the bbox.
+
+        Returns:
+            (lon_slice, lat_slice, lons_subset, lats_subset) where the
+            slices index into the supplied arrays and the subset arrays
+            are the coordinate values for the selected region.
+        """
+        lon_min, lon_max, lat_min, lat_max = bbox
+
+        # Expand by margin
+        lon_min -= margin
+        lon_max += margin
+        lat_min -= margin
+        lat_max += margin
+
+        # Longitude indices
+        lon_idx = np.where((lons_1d >= lon_min) & (lons_1d <= lon_max))[0]
+        if lon_idx.size == 0:
+            raise PyFVCOM2ValueError(
+                f"No longitude values found within bbox "
+                f"[{lon_min}, {lon_max}] (file range "
+                f"[{lons_1d.min()}, {lons_1d.max()}])."
+            )
+        lon_sl = slice(int(lon_idx[0]), int(lon_idx[-1]) + 1)
+
+        # Latitude indices
+        lat_idx = np.where((lats_1d >= lat_min) & (lats_1d <= lat_max))[0]
+        if lat_idx.size == 0:
+            raise PyFVCOM2ValueError(
+                f"No latitude values found within bbox "
+                f"[{lat_min}, {lat_max}] (file range "
+                f"[{lats_1d.min()}, {lats_1d.max()}])."
+            )
+        lat_sl = slice(int(lat_idx[0]), int(lat_idx[-1]) + 1)
+
+        return lon_sl, lat_sl, lons_1d[lon_sl], lats_1d[lat_sl]
+
 
 class FVCOMHarmonicsReader(HarmonicsReader):
     """A class to read FVCOM harmonics data from a netCDF file."""
@@ -232,13 +367,22 @@ class TPXOHarmonicsReader(HarmonicsReader):
         super().__init__(file_path)
 
     def read_harmonics(
-        self, requested_constituents: List[str], var_names: TPXOHarmonicsNames
+        self, requested_constituents: List[str], var_names: TPXOHarmonicsNames,
+        fill_land: bool = True,
+        bbox: Optional[Tuple[float, float, float, float]] = None,
+        bbox_margin: float = 1.0,
     ) -> HarmonicsData:
         """Read TPXO harmonics data for the specified constituents.
 
         Args:
             requested_constituents: List of tidal constituent names to read.
             var_names: NamedTuple containing variable names for TPXO data.
+            fill_land: Whether to fill land points (where amplitude == 0) by interpolation from ocean points. Defaults to True.
+            bbox: Optional (lon_min, lon_max, lat_min, lat_max) bounding box
+                to spatially subset the data before loading. Uses the target
+                coordinate system (e.g. -180 to 180). Dramatically reduces
+                memory usage and processing time for high-resolution files.
+            bbox_margin: Extra margin in degrees around the bbox. Defaults to 1.0.
         Returns:
             HarmonicsData: NamedTuple containing longitude, latitude, amplitudes, phases, and constituents
         """
@@ -268,8 +412,23 @@ class TPXOHarmonicsReader(HarmonicsReader):
                 amplitudes = tides[var_names.amplitude_var_name].values[np.newaxis, ...]
                 phases = tides[var_names.phase_var_name].values[np.newaxis, ...]
 
+        # Reduce 2-D coordinate arrays to 1-D if applicable
+        lons, lats = self._reduce_coords_to_1d(lons, lats)
+
+        # Shift longitudes from 0-360 to -180-180 and reorder data
+        lons, amplitudes, phases = self._shift_longitudes(lons, amplitudes, phases)
+
+        # Spatial subsetting (lons are now in -180 to 180)
+        if bbox is not None:
+            lon_sl, lat_sl, lons, lats = self._compute_bbox_indices(
+                lons, lats, bbox, margin=bbox_margin
+            )
+            amplitudes = amplitudes[:, lon_sl, lat_sl]
+            phases = phases[:, lon_sl, lat_sl]
+
         # Fill land points (where amplitude == 0) by interpolation from ocean points
-        amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
+        if fill_land:
+            amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
 
         return HarmonicsData(
             longitude=lons,
@@ -287,13 +446,22 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
         super().__init__(file_path)
 
     def read_harmonics(
-        self, requested_constituents: List[str], var_names: TPXOComplexHarmonicsNames
+        self, requested_constituents: List[str], var_names: TPXOComplexHarmonicsNames,
+        fill_land: bool = True,
+        bbox: Optional[Tuple[float, float, float, float]] = None,
+        bbox_margin: float = 1.0,
     ) -> HarmonicsData:
         """Read TPXO complex harmonics data for the specified constituents.
 
         Args:
             requested_constituents: List of tidal constituent names to read.
             var_names: NamedTuple containing variable names for TPXO data.
+            fill_land: Whether to fill land points (where amplitude == 0) by interpolation from ocean points. Defaults to True.
+            bbox: Optional (lon_min, lon_max, lat_min, lat_max) bounding box
+                to spatially subset the data before loading. Uses the target
+                coordinate system (e.g. -180 to 180). Dramatically reduces
+                memory usage and processing time for high-resolution files.
+            bbox_margin: Extra margin in degrees around the bbox. Defaults to 1.0.
         Returns:
             HarmonicsData: NamedTuple containing longitude, latitude, amplitudes, phases, and constituents
         """
@@ -311,7 +479,7 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
             lons = tides[var_names.lon_var_name].data[:]
             lats = tides[var_names.lat_var_name].data[:]
 
-            # Read amplitude and phase data
+            # Read real and imaginary data
             if "nc" in tides.dims:
                 real = tides[var_names.part1_var_name].isel(nc=const_indices)
                 imag = tides[var_names.part2_var_name].isel(nc=const_indices)
@@ -322,12 +490,27 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
                 real = tides[var_names.part1_var_name].values[np.newaxis, ...]
                 imag = tides[var_names.part2_var_name].values[np.newaxis, ...]
 
+        # Reduce 2-D coordinate arrays to 1-D if applicable
+        lons, lats = self._reduce_coords_to_1d(lons, lats)
+
+        # Shift longitudes from 0-360 to -180-180 and reorder data
+        lons, real, imag = self._shift_longitudes(lons, real, imag)
+
+        # Spatial subsetting (lons are now in -180 to 180)
+        if bbox is not None:
+            lon_sl, lat_sl, lons, lats = self._compute_bbox_indices(
+                lons, lats, bbox, margin=bbox_margin
+            )
+            real = real[:, lon_sl, lat_sl]
+            imag = imag[:, lon_sl, lat_sl]
+
         # Convert complex to amplitude and phase
         amplitudes = np.array(np.abs(real + 1j * imag), dtype=float)
         phases = np.array((np.arctan2(-imag, real) / np.pi) * 180, dtype=float)
 
         # Fill land points (where amplitude == 0) by interpolation from ocean points
-        amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
+        if fill_land:
+            amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
 
         return HarmonicsData(
             longitude=lons,
