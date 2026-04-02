@@ -21,6 +21,8 @@ FVCOMHarmonicsNames = NamedTuple(
         ("lon_var_name", str),
         ("lat_var_name", str),
         ("constituents_var_name", str),
+        ("apply_transport_unit_conversion", bool),
+        ("bathy_var_name", Optional[str]),
     ],
 )
 
@@ -33,6 +35,8 @@ TPXOHarmonicsNames = NamedTuple(
         ("lon_var_name", str),
         ("lat_var_name", str),
         ("constituents_var_name", str),
+        ("apply_transport_unit_conversion", bool),
+        ("bathy_var_name", Optional[str]),
     ],
 )
 
@@ -45,6 +49,8 @@ TPXOComplexHarmonicsNames = NamedTuple(
         ("lon_var_name", str),
         ("lat_var_name", str),
         ("constituents_var_name", str),
+        ("apply_transport_unit_conversion", bool),
+        ("bathy_var_name", Optional[str]),
     ],
 )
 
@@ -258,6 +264,93 @@ class HarmonicsReader(ABC):
         return (lons, *reordered)
 
     @staticmethod
+    def _convert_bathy_to_metres(bathy, units):
+        """Convert a bathymetry array to metres based on its units string.
+
+        Args:
+            bathy: Bathymetry array.
+            units: Units string from the netCDF variable (e.g. 'cm', 'km').
+
+        Returns:
+            Bathymetry array in metres.
+
+        Raises:
+            PyFVCOM2ValueError: If the units string is not recognised.
+        """
+        units_lower = units.strip().lower()
+        if units_lower in ('m', 'meter', 'meters', 'metre', 'metres'):
+            return bathy
+        elif units_lower in ('cm', 'centimeter', 'centimeters', 'centimetre', 'centimetres'):
+            return bathy / 100.0
+        elif units_lower in ('km', 'kilometer', 'kilometers', 'kilometre', 'kilometres'):
+            return bathy * 1000.0
+        else:
+            raise PyFVCOM2ValueError(
+                f"Unrecognised bathymetry units '{units}'. "
+                f"Expected one of: m, cm, km (or their long forms)."
+            )
+
+    @staticmethod
+    def _get_length_scale_to_metres(units):
+        """Return the multiplicative factor that converts a length unit to metres.
+
+        The *units* string may be a pure length (e.g. ``'cm'``), a velocity
+        (e.g. ``'cm/s'``), or a transport term (e.g. ``'cm^2/s'``).  Only
+        the length component varies across TPXO files; time is always in
+        seconds.  This method extracts the length prefix and returns the
+        appropriate scale factor so that the caller can multiply amplitudes
+        to obtain metres (or m/s, m^2/s, etc.).
+
+        Recognised length prefixes: mm, cm, m, km.
+
+        Args:
+            units: Units string from the netCDF variable attribute.
+
+        Returns:
+            Scale factor (float) to multiply amplitudes by.
+
+        Raises:
+            PyFVCOM2ValueError: If the length prefix is not recognised.
+        """
+        units_stripped = units.strip().lower()
+
+        # Split off the time part (e.g. '/s') if present
+        parts = units_stripped.split('/')
+        length_with_exp = parts[0].strip()
+
+        # Check for an exponent (e.g. 'cm^2' for transport)
+        if '^' in length_with_exp:
+            length_part, exp_str = length_with_exp.split('^', 1)
+            length_part = length_part.strip()
+            exponent = int(exp_str.strip())
+        else:
+            length_part = length_with_exp
+            exponent = 1
+
+        scale_map = {
+            'mm': 0.001,
+            'millimeter': 0.001, 'millimeters': 0.001,
+            'millimetre': 0.001, 'millimetres': 0.001,
+            'cm': 0.01,
+            'centimeter': 0.01, 'centimeters': 0.01,
+            'centimetre': 0.01, 'centimetres': 0.01,
+            'm': 1.0,
+            'meter': 1.0, 'meters': 1.0,
+            'metre': 1.0, 'metres': 1.0,
+            'km': 1000.0,
+            'kilometer': 1000.0, 'kilometers': 1000.0,
+            'kilometre': 1000.0, 'kilometres': 1000.0,
+        }
+
+        if length_part not in scale_map:
+            raise PyFVCOM2ValueError(
+                f"Unrecognised length unit '{length_part}' in units string '{units}'. "
+                f"Expected one of: mm, cm, m, km (or their long forms)."
+            )
+
+        return scale_map[length_part] ** exponent
+
+    @staticmethod
     def _compute_bbox_indices(
         lons_1d: np.ndarray,
         lats_1d: np.ndarray,
@@ -412,6 +505,12 @@ class TPXOHarmonicsReader(HarmonicsReader):
                 amplitudes = tides[var_names.amplitude_var_name].values[np.newaxis, ...]
                 phases = tides[var_names.phase_var_name].values[np.newaxis, ...]
 
+            # Convert amplitude length units to metres
+            amp_units = tides[var_names.amplitude_var_name].attrs.get('units', 'm')
+            scale = self._get_length_scale_to_metres(amp_units)
+            if scale != 1.0:
+                amplitudes = amplitudes * scale
+
         # Reduce 2-D coordinate arrays to 1-D if applicable
         lons, lats = self._reduce_coords_to_1d(lons, lats)
 
@@ -454,6 +553,7 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
         fill_land: bool = True,
         bbox: Optional[Tuple[float, float, float, float]] = None,
         bbox_margin: float = 1.0,
+        bathy_file: Optional[np.ndarray] = None,
     ) -> HarmonicsData:
         """Read TPXO complex harmonics data for the specified constituents.
 
@@ -466,12 +566,28 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
                 coordinate system (e.g. -180 to 180). Dramatically reduces
                 memory usage and processing time for high-resolution files.
             bbox_margin: Extra margin in degrees around the bbox. Defaults to 1.0.
+            bathy_file: Optional path to a netCDF file containing bathymetry data on the same grid, required if apply_transport_unit_conversion is True.
         Returns:
             HarmonicsData: NamedTuple containing longitude, latitude, amplitudes, phases, and constituents
         """
         self._check_constituents(
             requested_constituents, var_names.constituents_var_name
         )
+
+        # If transport unit conversion is needed, read bathymetry data
+        if var_names.apply_transport_unit_conversion:
+            if var_names.bathy_var_name is None:
+                raise PyFVCOM2ValueError(
+                    "apply_transport_unit_conversion is True but bathy_var_name is not provided in var_names."
+                )
+            if bathy_file is None:
+                raise PyFVCOM2ValueError(
+                    "apply_transport_unit_conversion is True but no bathy_file path provided."
+                )
+            with xr.open_dataset(str(bathy_file)) as bathy_ds:
+                bathy = bathy_ds[var_names.bathy_var_name].data[:]
+                bathy_units = bathy_ds[var_names.bathy_var_name].attrs.get('units', 'm')
+                bathy = self._convert_bathy_to_metres(bathy, bathy_units)
 
         with xr.open_dataset(str(self.file_path)) as tides:
             constituent_names = self._parse_constituents(tides[var_names.constituents_var_name])
@@ -493,12 +609,26 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
                 # Single constituent file — no nc dimension
                 real = tides[var_names.part1_var_name].values[np.newaxis, ...]
                 imag = tides[var_names.part2_var_name].values[np.newaxis, ...]
+        
+            # Save the units of the real/imaginary parts for later use in transport unit conversion if needed
+            real_units = tides[var_names.part1_var_name].attrs.get('units', '')
+            imag_units = tides[var_names.part2_var_name].attrs.get('units', '')
+
+            # The real units and imaginary units should be the same. Confirm this.
+            if real_units != imag_units:
+                raise PyFVCOM2ValueError(
+                    f"Real and imaginary parts have different units: "
+                    f"real units='{real_units}', imag units='{imag_units}'."
+                )
 
         # Reduce 2-D coordinate arrays to 1-D if applicable
         lons, lats = self._reduce_coords_to_1d(lons, lats)
 
         # Shift longitudes from 0-360 to -180-180 and reorder data
-        lons, real, imag = self._shift_longitudes(lons, real, imag)
+        if var_names.apply_transport_unit_conversion:
+            lons, real, imag, bathy = self._shift_longitudes(lons, real, imag, bathy)
+        else:
+            lons, real, imag = self._shift_longitudes(lons, real, imag)
 
         # Spatial subsetting (lons are now in -180 to 180)
         if bbox is not None:
@@ -507,10 +637,21 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
             )
             real = real[:, lon_sl, lat_sl]
             imag = imag[:, lon_sl, lat_sl]
+            if var_names.apply_transport_unit_conversion:
+                bathy = bathy[lon_sl, lat_sl]
 
         # Convert complex to amplitude and phase
         amplitudes = np.array(np.abs(real + 1j * imag), dtype=float)
         phases = np.array((np.arctan2(-imag, real) / np.pi) * 180, dtype=float)
+
+        # Convert amplitude length units to metres
+        scale = self._get_length_scale_to_metres(real_units)
+        if scale != 1.0:
+            amplitudes = amplitudes * scale
+
+        # Convert transport to velocity by dividing through bathymetry
+        if var_names.apply_transport_unit_conversion:
+            amplitudes = amplitudes / bathy[np.newaxis, :, :]
 
         # Fill land points (where amplitude == 0) by interpolation from ocean points
         if fill_land:
@@ -592,6 +733,8 @@ def get_fvcom_harmonics_names(var_name: str) -> FVCOMHarmonicsNames:
         lon_var_name=lon_name,
         lat_var_name=lat_name,
         constituents_var_name="z_const_names",
+        apply_transport_unit_conversion=False,
+        bathy_var_name=None,
     )
 
 
@@ -623,6 +766,8 @@ def get_tpxo_harmonics_names(var_name: str) -> TPXOHarmonicsNames:
         lon_var_name=lon_name,
         lat_var_name=lat_name,
         constituents_var_name="con",
+        apply_transport_unit_conversion=False,
+        bathy_var_name=None,
     )
 
 
@@ -639,12 +784,18 @@ def get_tpxo_complex_harmonics_names(var_name: str) -> TPXOComplexHarmonicsNames
     if var_name == "zeta":
         part1_name, part2_name = "hRe", "hIm"
         lon_name, lat_name = "lon_z", "lat_z"
+        bathy_var_name = "hz"
+        apply_transport_unit_conversion = False
     elif var_name == "u":
         part1_name, part2_name = "uRe", "uIm"
         lon_name, lat_name = "lon_u", "lat_u"
+        bathy_var_name = "hu"
+        apply_transport_unit_conversion = True
     elif var_name == "v":
         part1_name, part2_name = "vRe", "vIm"
         lon_name, lat_name = "lon_v", "lat_v"
+        bathy_var_name = "hv"
+        apply_transport_unit_conversion = True
     else:
         raise PyFVCOM2ValueError(f"Unknown TPXO variable name '{var_name}'")
 
@@ -654,4 +805,6 @@ def get_tpxo_complex_harmonics_names(var_name: str) -> TPXOComplexHarmonicsNames
         lon_var_name=lon_name,
         lat_var_name=lat_name,
         constituents_var_name="con",
+        apply_transport_unit_conversion=apply_transport_unit_conversion,
+        bathy_var_name=bathy_var_name,
     )
