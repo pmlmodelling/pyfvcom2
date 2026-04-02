@@ -429,6 +429,10 @@ class TPXOHarmonicsReader(HarmonicsReader):
         # Fill land points (where amplitude == 0) by interpolation from ocean points
         if fill_land:
             amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
+        else:
+            land_mask = np.all(amplitudes == 0.0, axis=0)
+            amplitudes[:, land_mask] = np.nan
+            phases[:, land_mask] = np.nan
 
         return HarmonicsData(
             longitude=lons,
@@ -511,6 +515,10 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
         # Fill land points (where amplitude == 0) by interpolation from ocean points
         if fill_land:
             amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
+        else:
+            land_mask = np.all(amplitudes == 0.0, axis=0)
+            amplitudes[:, land_mask] = np.nan
+            phases[:, land_mask] = np.nan
 
         return HarmonicsData(
             longitude=lons,
