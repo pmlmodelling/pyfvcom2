@@ -20,14 +20,14 @@ def cart2pol(x: np.ndarray, y: np.ndarray, degrees: bool = False) -> tuple[np.nd
     Args:
         x: X-coordinates (cartesian). Can be scalar or array-like.
         y: Y-coordinates (cartesian). Can be scalar or array-like.
-        degrees: If True, return angles in degrees (0-360°), 
+        degrees: If True, return angles in degrees (-180 to 180°), 
                 otherwise in radians (-π to π). Defaults to False.
     
     Returns:
         Tuple containing:
             - rho: Radial distances from origin.
             - phi: Angles from positive x-axis. In radians (-π to π) by default,
-                  or degrees (0-360°) if degrees=True.
+                  or degrees (-180 to 180°) if degrees=True.
     
     Raises:
         PyFVCOM2ValueError: If x and y arrays have different shapes.
@@ -42,7 +42,7 @@ def cart2pol(x: np.ndarray, y: np.ndarray, degrees: bool = False) -> tuple[np.nd
     phi = np.arctan2(y, x)
     
     if degrees:
-        phi = np.mod(np.rad2deg(phi), 360)
+        phi = (np.rad2deg(phi) + 180) % 360 - 180
     
     return (rho, phi)
 

@@ -185,8 +185,8 @@ class HarmonicsReader(ABC):
         else:
             lon_2d, lat_2d = np.asarray(lons), np.asarray(lats)
 
-        # Land mask: True where amplitude is zero for ALL constituents
-        land_mask = np.all(amplitudes == 0.0, axis=0)
+        # Land mask: True where amplitude is zero or NaN for ALL constituents
+        land_mask = np.all((amplitudes == 0.0) | np.isnan(amplitudes), axis=0)
 
         if not np.any(land_mask):
             return amplitudes, phases
@@ -669,6 +669,7 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
                 bathy = bathy_ds[var_names.bathy_var_name].data[:]
                 bathy_units = bathy_ds[var_names.bathy_var_name].attrs.get('units', 'm')
                 bathy = self._convert_bathy_to_metres(bathy, bathy_units)
+                bathy = np.where(bathy == 0, np.nan, bathy)
 
         if isinstance(self.file_path, dict):
             # Per-constituent files: read each one individually and stack
@@ -728,9 +729,10 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
         if fill_land:
             amplitudes, phases = self._fill_land_points(lons, lats, amplitudes, phases)
         else:
-            land_mask = np.all(amplitudes == 0.0, axis=0)
-            amplitudes[:, land_mask] = np.nan
-            phases[:, land_mask] = np.nan
+            amp_land_mask = np.all(amplitudes == 0.0, axis=0)
+            phase_land_mask = np.all(phases == 0.0, axis=0)
+            amplitudes[:, amp_land_mask] = np.nan
+            phases[:, phase_land_mask] = np.nan
 
         return HarmonicsData(
             longitude=lons,
