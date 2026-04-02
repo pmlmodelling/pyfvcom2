@@ -53,6 +53,12 @@ dev = [
 docs = [
     "sphinx>=3.0",
     "sphinx-rtd-theme>=0.5",
+    "jupyter",
+    "jupyter_client",
+    "ipykernel",
+    "cmocean",
+    "matplotlib",
+    "cartopy"
 ]
 
 [project.urls]
