@@ -441,6 +441,75 @@ class NestManager:
             data = data + tidal
         return data
 
+    def get_tidal_data(self, variable: Optional[str] = None) -> dict | np.ndarray:
+        """Get tidal prediction data.
+
+        Args:
+            variable: If given, return the array for that variable only.
+                If None, return the full dict of all tidal variables.
+
+        Returns:
+            Dictionary of variable name to array, or a single array when
+            *variable* is specified.
+
+        Raises:
+            PyFVCOM2ValueError: If no tidal data has been added, or the
+                requested variable is not available.
+        """
+        if not self._tidal_data:
+            raise PyFVCOM2ValueError(
+                "No tidal data available. Call add_tidal_data first."
+            )
+
+        if variable is not None:
+            if variable not in self._tidal_data:
+                raise PyFVCOM2ValueError(
+                    f"Tidal data for '{variable}' not available. "
+                    f"Available variables: {list(self._tidal_data.keys())}"
+                )
+            return self._tidal_data[variable]
+
+        return dict(self._tidal_data)
+
+    def get_forcing_data(self, variable: Optional[str] = None,
+                         adjust_tides: bool = False) -> dict | np.ndarray:
+        """Get forcing data, optionally with tidal adjustment applied.
+
+        Args:
+            variable: If given, return the array for that variable only.
+                If None, return a dict of all forcing variables.
+            adjust_tides: If True, add tidal predictions to the applicable
+                forcing variables (those for which tidal data exists).
+                Requires that add_tidal_data has been called first.
+
+        Returns:
+            Dictionary of variable name to array, or a single array when
+            *variable* is specified.
+
+        Raises:
+            PyFVCOM2ValueError: If no forcing data has been added, or the
+                requested variable is not available.
+        """
+        if not self._forcing_data:
+            raise PyFVCOM2ValueError(
+                "No forcing data available. Call add_forcing_data first."
+            )
+
+        tide_vars = list(self._tidal_data.keys()) if adjust_tides else None
+
+        if variable is not None:
+            if variable not in self._forcing_data:
+                raise PyFVCOM2ValueError(
+                    f"Forcing data for '{variable}' not available. "
+                    f"Available variables: {list(self._forcing_data.keys())}"
+                )
+            return self._get_adjusted_data(variable, tide_vars)
+
+        return {
+            var: self._get_adjusted_data(var, tide_vars)
+            for var in self._forcing_data
+        }
+
     def add_forcing_data(self, interpolator: Interpolator, fvcom_var_name: str, horizontal_position: str) -> None:
         """ Add forcing data for the nests
 
