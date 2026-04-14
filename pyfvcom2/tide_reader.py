@@ -595,6 +595,18 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
     def __init__(self, file_path: Union[str, Dict[str, str]]):
         super().__init__(file_path)
 
+    @staticmethod
+    def _resolve_var_name(dataset, name):
+        """Resolve a variable name, falling back to case-insensitive match."""
+        if name in dataset:
+            return name
+        # Case-insensitive fallback
+        name_lower = name.lower()
+        for var in dataset.data_vars:
+            if var.lower() == name_lower:
+                return var
+        raise KeyError(f"No variable named '{name}' (case-insensitive) in dataset")
+
     def _read_single_file(self, file_path, requested_constituents, var_names):
         """Read real/imaginary data and coordinates from a single file.
 
@@ -609,17 +621,20 @@ class TPXOComplexHarmonicsReader(HarmonicsReader):
             lons = tides[var_names.lon_var_name].data[:]
             lats = tides[var_names.lat_var_name].data[:]
 
+            part1_name = self._resolve_var_name(tides, var_names.part1_var_name)
+            part2_name = self._resolve_var_name(tides, var_names.part2_var_name)
+
             if "nc" in tides.dims:
-                real = tides[var_names.part1_var_name].isel(nc=const_indices)
-                imag = tides[var_names.part2_var_name].isel(nc=const_indices)
+                real = tides[part1_name].isel(nc=const_indices)
+                imag = tides[part2_name].isel(nc=const_indices)
                 real = real.transpose("nc", ...).values
                 imag = imag.transpose("nc", ...).values
             else:
-                real = tides[var_names.part1_var_name].values[np.newaxis, ...]
-                imag = tides[var_names.part2_var_name].values[np.newaxis, ...]
+                real = tides[part1_name].values[np.newaxis, ...]
+                imag = tides[part2_name].values[np.newaxis, ...]
 
-            real_units = tides[var_names.part1_var_name].attrs.get('units', '')
-            imag_units = tides[var_names.part2_var_name].attrs.get('units', '')
+            real_units = tides[part1_name].attrs.get('units', '')
+            imag_units = tides[part2_name].attrs.get('units', '')
 
             if real_units != imag_units:
                 raise PyFVCOM2ValueError(
