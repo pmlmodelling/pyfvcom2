@@ -266,4 +266,4 @@ def extend_datetime_array(datetimes: np.ndarray, extension_length_in_days: float
     extended_datetimes = pandas.date_range(extended_datetimes_start, extended_datetimes_end,
                                            freq=timedelta(days=interval.days, seconds=interval.seconds))
 
-    return extended_datetimes
+    return extended_datetimes.to_pydatetime()
