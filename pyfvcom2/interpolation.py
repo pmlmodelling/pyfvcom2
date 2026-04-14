@@ -757,11 +757,11 @@ class TPXOInterpolator(Interpolator):
         for i in range(n_constituents):
             comp_1_interpolator = interpolate.RegularGridInterpolator(
                 (harmonics_lon, harmonics_lat), harmonics_component_1[i],
-                method=self.interp_method, fill_value=None
+                method=self.interp_method, bounds_error=False, fill_value=None
             )
             comp_2_interpolator = interpolate.RegularGridInterpolator(
                 (harmonics_lon, harmonics_lat), harmonics_component_2[i],
-                method=self.interp_method, fill_value=None
+                method=self.interp_method, bounds_error=False, fill_value=None
             )
             interp_component_1[i] = comp_1_interpolator((target_lon, target_lat))
             interp_component_2[i] = comp_2_interpolator((target_lon, target_lat))
