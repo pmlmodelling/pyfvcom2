@@ -7,7 +7,7 @@ import numpy as np
 import xarray as xr
 from scipy import interpolate
 from scipy.spatial import Delaunay
-from scipy.interpolate import LinearNDInterpolator
+from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 from typing import Optional, Union, List
 from collections import namedtuple
 from pyfvcom2.exceptions import PyFVCOM2ValueError
@@ -460,6 +460,52 @@ class CMEMSReader:
             var_data = var.values
             return var_data[~self.mask_2D]
 
+    def get_filled_2D_var(self, var_name: str, target_datetime: datetime, tolerance=None) -> np.ndarray:
+        """Fill masked values in a 2D variable by interpolation.
+
+        Uses a Delaunay triangulation of unmasked ocean points to linearly
+        interpolate over land-masked cells on the regular CMEMS grid.
+
+        Args:
+            var_name (str): Variable name.
+            target_datetime (datetime): Target datetime to retrieve data for.
+            tolerance (timedelta, optional): Maximum allowed time difference. Defaults to None.
+
+        Returns:
+            np.ndarray: Filled variable values on the full (lat, lon) grid.
+        """
+        dataset, local_time_index = self._load_dataset_for_datetime(target_datetime, tolerance)
+
+        if var_name not in dataset.variables:
+            raise PyFVCOM2ValueError(
+                f"Variable {var_name} not found in the dataset"
+            )
+
+        var = dataset[var_name].isel({self.time_dim_name: local_time_index})
+        var_data = var.values  # shape (lat, lon)
+
+        valid_data = var_data[~self.mask_2D]
+
+        # Build triangulation on first call and cache it for reuse
+        if self._surface_triangulation is None:
+            source_points = np.column_stack((self._unmasked_lons, self._unmasked_lats))
+            self._surface_triangulation = Delaunay(source_points)
+
+        # Interpolate onto the full regular grid
+        target_points = np.column_stack((self._lon_grid.ravel(), self._lat_grid.ravel()))
+        interpolator = LinearNDInterpolator(self._surface_triangulation, valid_data)
+        var_data_filled = interpolator(target_points).reshape(self._lon_grid.shape)
+
+        # Fill remaining NaNs (outside the convex hull) using nearest-neighbor
+        nan_mask = np.isnan(var_data_filled)
+        if np.any(nan_mask):
+            source_points = np.column_stack((self._unmasked_lons, self._unmasked_lats))
+            nn_interpolator = NearestNDInterpolator(source_points, valid_data)
+            nan_points = np.column_stack((self._lon_grid[nan_mask], self._lat_grid[nan_mask]))
+            var_data_filled[nan_mask] = nn_interpolator(nan_points)
+
+        return var_data_filled
+
     def get_filled_3D_var(self, var_name: str, target_datetime: datetime, tolerance=None) -> np.ndarray:
         """Fill masked values in a 3D variable by interpolation
 
@@ -501,6 +547,15 @@ class CMEMSReader:
         target_points = np.column_stack((self._lon_grid.ravel(), self._lat_grid.ravel()))
         interpolator = LinearNDInterpolator(self._surface_triangulation, surface_valid)
         interpolated_surface = interpolator(target_points).reshape(self._lon_grid.shape)
+
+        # Fill remaining NaNs (outside the convex hull) using nearest-neighbor
+        nan_mask = np.isnan(interpolated_surface)
+        if np.any(nan_mask):
+            source_points = np.column_stack((self._unmasked_lons, self._unmasked_lats))
+            nn_interpolator = NearestNDInterpolator(source_points, surface_valid)
+            nan_points = np.column_stack((self._lon_grid[nan_mask], self._lat_grid[nan_mask]))
+            interpolated_surface[nan_mask] = nn_interpolator(nan_points)
+
         var_data_filled[0, :, :] = interpolated_surface
 
         # Copy in unmasked values for other depth levels
