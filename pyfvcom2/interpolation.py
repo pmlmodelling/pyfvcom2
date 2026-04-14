@@ -73,6 +73,11 @@ class CMEMSInterpolator(Interpolator):
             depending on the variable.
         """
         cmems_var_name = self.fvcom_to_cmems_var_names.get(fvcom_var_name)
+        if cmems_var_name is None:
+            raise PyFVCOM2ValueError(
+                f"No CMEMS variable mapping found for FVCOM variable '{fvcom_var_name}'. "
+                f"Available mappings: {self.fvcom_to_cmems_var_names}"
+            )
 
         print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid.")
 
