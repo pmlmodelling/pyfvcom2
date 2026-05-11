@@ -527,7 +527,7 @@ class NestManager:
         # For velocities, calculate the vertically averaged component
         if fvcom_var_name in ['u', 'v']:
             indices = self.get_all_nest_elements()
-            layer_thickness = (self._grid_ref.sigma_levels.T[0:-1, indices] - self._grid_ref.sigma_levels.T[1:, indices])
+            layer_thickness = (self._grid_ref.sigmac_levels.T[0:-1, indices] - self._grid_ref.sigmac_levels.T[1:, indices])
             self._forcing_data[f'{fvcom_var_name}a'] = zbar(forcing_data, layer_thickness)
 
     def create_forcing_file(self, output_path: str, nest_type: int,
