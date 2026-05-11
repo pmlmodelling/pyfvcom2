@@ -408,7 +408,9 @@ class CMEMSReader:
                 f"The supplied variable {var_name} is not in the dataset"
             )
 
-        if not self.has_depth_dimension:
+        var_has_depth = self.has_depth_dimension and self.depth_dim_name in dataset[var_name].dims
+
+        if not var_has_depth:
             var = dataset[var_name].isel({self.time_dim_name: local_time_index})
             var_data = var.values
             return var_data
@@ -444,7 +446,9 @@ class CMEMSReader:
                 f"The supplied variable {var_name} is not in the dataset"
             )
 
-        if not self.has_depth_dimension:
+        var_has_depth = self.has_depth_dimension and self.depth_dim_name in dataset[var_name].dims
+
+        if not var_has_depth:
             var = dataset[var_name].isel({self.time_dim_name: local_time_index})
             var_data = var.values
             return var_data[~self.mask_2D]
