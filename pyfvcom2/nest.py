@@ -789,3 +789,109 @@ class NestManager:
                     'coordinates': 'time siglev lat lon'}
             nest_ncfile.add_variable('hyw', hyw, 
                     ['time', 'siglev', 'node'], attributes=atts, ncopts=ncopts)
+
+    def apply_ramp(self, ramp_length: float, initial_ts: Optional[list] = None,
+                   ramp_type: str = 'cosine') -> None:
+        """Apply a ramp to forcing (and optionally tidal) data.
+
+        Blends each variable smoothly from an initial value at t=0 to the
+        full forcing values, preventing a shock at model start-up.
+
+        Velocities (u, v, ua, va) and sea surface elevation (zeta) are always
+        ramped from zero. Temperature and salinity are only ramped when
+        initial_ts is provided.
+
+        Must be called after add_forcing_data (and add_tidal_data if tidal
+        data is present) and before create_forcing_file.
+
+        Args:
+            ramp_length: Spin-up duration or timescale in seconds.
+                For 'cosine' and 'linear', the ramp reaches full amplitude at
+                exactly t = ramp_length. For 'tanh', it is a timescale: the
+                ramp reaches ~76 % at t = ramp_length and ~99.5 % at
+                t = 3 * ramp_length (asymptotic, never strictly reaches 1).
+            initial_ts: [temp_initial, salinity_initial] scalar values to ramp
+                from for temperature and salinity. If None those variables are
+                not ramped.
+            ramp_type: Shape of the ramp function. One of:
+                - 'cosine' (default): half-cosine, C¹ continuous at both
+                  t=0 and t=ramp_length. Reaches full amplitude at t=ramp_length.
+                - 'tanh': hyperbolic tangent, C∞ everywhere but asymptotic.
+                - 'linear': linear rise, C⁰ (kinked at t=0 and t=ramp_length).
+        """
+        if not self._dates:
+            raise PyFVCOM2ValueError("Dates must be set before applying a ramp.")
+        if not self._forcing_data:
+            raise PyFVCOM2ValueError("Forcing data must be added before applying a ramp.")
+
+        t0 = self._dates[0]
+        t_sec = np.array([(t - t0).total_seconds() for t in self._dates])
+        ramp = self._build_ramp(t_sec, ramp_length, ramp_type)
+
+        zero_init_vars = [v for v in ('u', 'v', 'ua', 'va', 'zeta')
+                          if v in self._forcing_data]
+        for var in zero_init_vars:
+            self._forcing_data[var] = self._apply_ramp_to_array(
+                self._forcing_data[var], ramp, 0.0
+            )
+            if var in self._tidal_data:
+                self._tidal_data[var] = self._apply_ramp_to_array(
+                    self._tidal_data[var], ramp, 0.0
+                )
+
+        if initial_ts is not None:
+            for var, init_val in zip(('temp', 'salinity'), initial_ts):
+                if var in self._forcing_data:
+                    self._forcing_data[var] = self._apply_ramp_to_array(
+                        self._forcing_data[var], ramp, init_val
+                    )
+
+    @staticmethod
+    def _build_ramp(t_sec: np.ndarray, ramp_length: float,
+                    ramp_type: str) -> np.ndarray:
+        """Build a ramp weight array from 0 to 1 over ramp_length seconds.
+
+        Args:
+            t_sec: Time elapsed from simulation start in seconds, shape (n_times,).
+            ramp_length: Duration or timescale of the ramp in seconds.
+            ramp_type: Shape of the ramp. One of 'cosine', 'tanh', or 'linear'.
+
+        Returns:
+            Ramp weight array in [0, 1], shape (n_times,).
+
+        Raises:
+            PyFVCOM2ValueError: If ramp_type is not recognised.
+        """
+        if ramp_type == 'cosine':
+            return np.where(t_sec >= ramp_length,
+                            1.0,
+                            0.5 * (1 - np.cos(np.pi * t_sec / ramp_length)))
+        elif ramp_type == 'tanh':
+            return np.tanh(t_sec / ramp_length)
+        elif ramp_type == 'linear':
+            return np.minimum(t_sec / ramp_length, 1.0)
+        else:
+            raise PyFVCOM2ValueError(
+                f"Unknown ramp_type '{ramp_type}'. Must be 'cosine', 'tanh', or 'linear'."
+            )
+
+    @staticmethod
+    def _apply_ramp_to_array(data: np.ndarray, ramp: np.ndarray,
+                              initial_val: float) -> np.ndarray:
+        """Blend data from initial_val at t=0 to full values using ramp.
+
+        Handles 2-D (time, points) and 3-D (time, depth, points) arrays.
+
+        Args:
+            data: Forcing array with time as the first axis.
+            ramp: 1-D array of ramp weights in [0, 1], length == data.shape[0].
+            initial_val: Scalar initial value to ramp from.
+
+        Returns:
+            Ramped array with the same shape as data.
+        """
+        if data.ndim == 2:
+            r = ramp[:, np.newaxis]
+        else:
+            r = ramp[:, np.newaxis, np.newaxis]
+        return initial_val * (1 - r) + data * r
