@@ -592,6 +592,23 @@ class HarmonicsAnalyser:
     dump_raw : bool, optional
         If True, also write the raw (input) time series for each variable.
         Defaults to False.
+    node_indices : array-like of int, optional
+        Integer indices into the full node array selecting the subset of nodes
+        to analyse. If None (default), all nodes are analysed. Useful for
+        restricting the analysis to a spatial region of interest and avoiding
+        the cost of analysing the full mesh. Typically constructed as::
+
+            mask = (lon >= lon_min) & (lon <= lon_max) & (lat >= lat_min) & (lat <= lat_max)
+            node_indices = np.where(mask)[0]
+
+    element_indices : array-like of int, optional
+        Integer indices into the full element array selecting the subset of
+        elements to analyse. If None (default), all elements are analysed.
+        Constructed analogously to *node_indices* using element-centred
+        coordinates (``reader.lon_elements``, ``reader.lat_elements``).
+    verbose : bool, optional
+        If True, print UTide's per-solve progress messages (``"solve: matrix
+        prep … solution … done."``). Defaults to False.
 
     Examples
     --------
@@ -609,12 +626,18 @@ class HarmonicsAnalyser:
         constit: tuple = DEFAULT_CONSTIT,
         predict: bool = False,
         dump_raw: bool = False,
+        node_indices: np.ndarray = None,
+        element_indices: np.ndarray = None,
+        verbose: bool = False,
     ):
         self._reader = reader
         self._output_file = output_file
         self._constit = constit
         self._predict = predict
         self._dump_raw = dump_raw
+        self._node_indices = node_indices
+        self._element_indices = element_indices
+        self._verbose = verbose
 
         # Pre-compute MJD times once — used by analyse_harmonics and write_fvcom_time.
         self._times = date2num(
@@ -640,10 +663,32 @@ class HarmonicsAnalyser:
             variables = ['zeta', 'u', 'v', 'ua', 'va']
 
         reader = self._reader
+        node_idx = self._node_indices
+        elem_idx = self._element_indices
+
+        n_nodes = reader.n_nodes if node_idx is None else len(node_idx)
+        n_ele   = reader.n_elements if elem_idx is None else len(elem_idx)
+
+        lon    = reader.lon_nodes    if node_idx is None else reader.lon_nodes[node_idx]
+        lat    = reader.lat_nodes    if node_idx is None else reader.lat_nodes[node_idx]
+        lonc   = reader.lon_elements if elem_idx is None else reader.lon_elements[elem_idx]
+        latc   = reader.lat_elements if elem_idx is None else reader.lat_elements[elem_idx]
+        h      = reader.bathy_nodes    if node_idx is None else reader.bathy_nodes[node_idx]
+        h_ctr  = reader.bathy_elements if elem_idx is None else reader.bathy_elements[elem_idx]
+        siglay = reader.sigma_layers_nodes if node_idx is None else reader.sigma_layers_nodes[:, node_idx]
+        siglev = reader.sigma_levels_nodes if node_idx is None else reader.sigma_levels_nodes[:, node_idx]
+
+        # nv is only meaningful for a full-mesh run (subset connectivity
+        # would require re-indexing which is not attempted here).
+        if node_idx is None:
+            nv = (reader.grid.triangles + 1).T
+        else:
+            # Placeholder: store a zero array; plotting via scatter not tripcolor.
+            nv = np.zeros((3, n_ele), dtype=int)
 
         dims = {
-            'node': reader.n_nodes,
-            'nele': reader.n_elements,
+            'node': n_nodes,
+            'nele': n_ele,
             'siglay': reader.n_sigma_layers,
             'siglev': reader.n_sigma_levels,
             'three': 3,
@@ -659,21 +704,11 @@ class HarmonicsAnalyser:
             'history': 'Created by pyfvcom2 HarmonicsAnalyser',
         }
 
-        # FVCOMReader stores triangles as (nele, 3) 0-based; FVCOM convention
-        # for nv is (3, nele) 1-based.
-        nv = (reader.grid.triangles + 1).T
-
         with HarmonicAnalysisWriter(self._output_file, dims, global_atts) as ncout:
             ncout.add_grid(
-                lon=reader.lon_nodes,
-                lat=reader.lat_nodes,
-                lonc=reader.lon_elements,
-                latc=reader.lat_elements,
-                h=reader.bathy_nodes,
-                h_center=reader.bathy_elements,
-                nv=nv,
-                siglay=reader.sigma_layers_nodes,
-                siglev=reader.sigma_levels_nodes,
+                lon=lon, lat=lat, lonc=lonc, latc=latc,
+                h=h, h_center=h_ctr, nv=nv,
+                siglay=siglay, siglev=siglev,
                 consts=self._cnames,
             )
 
@@ -688,8 +723,10 @@ class HarmonicsAnalyser:
         reader = self._reader
         is_node = reader.var_is_node_based(var)
         has_depth = reader.get_vertical_position(var) == 'layer_centre'
-        latitudes = reader.lat_nodes if is_node else reader.lat_elements
-        npositions = reader.n_nodes if is_node else reader.n_elements
+        indices = self._node_indices if is_node else self._element_indices
+        lat_all = reader.lat_nodes if is_node else reader.lat_elements
+        latitudes = lat_all if indices is None else lat_all[indices]
+        npositions = len(latitudes)
         ntimes = len(reader.dates)
         nconsts = len(self._constit)
 
@@ -713,6 +750,7 @@ class HarmonicsAnalyser:
                     self._times, data.T, latitudes,
                     predict=self._predict,
                     constit=self._constit,
+                    verbose=self._verbose,
                 )
                 if self._predict:
                     harmonics, predicted = result
@@ -731,6 +769,7 @@ class HarmonicsAnalyser:
                 self._times, data.T, latitudes,
                 predict=self._predict,
                 constit=self._constit,
+                verbose=self._verbose,
             )
             if self._predict:
                 harmonics, predicted = result
@@ -750,6 +789,10 @@ class HarmonicsAnalyser:
     def _load_full_timeseries(self, var: str, zlev: int = None) -> np.ndarray:
         """Load the complete time series for one variable.
 
+        Reads each underlying NetCDF file in a single bulk slice rather than
+        one timestep at a time, which is substantially faster for variables
+        with many time steps.
+
         Parameters
         ----------
         var : str
@@ -761,17 +804,40 @@ class HarmonicsAnalyser:
         Returns
         -------
         data : np.ndarray
-            Shape ``(ntimes, npositions)``.
+            Shape ``(ntimes, npositions)``, where npositions reflects any
+            spatial subset set on the analyser.
         """
-        reader = self._reader
-        npositions = reader.n_nodes if reader.var_is_node_based(var) else reader.n_elements
-        ntimes = len(reader.dates)
+        from netCDF4 import Dataset as _Dataset
 
+        reader = self._reader
+        is_node = reader.var_is_node_based(var)
+        spatial_idx = self._node_indices if is_node else self._element_indices
+        npositions = (reader.n_nodes if is_node else reader.n_elements) \
+                     if spatial_idx is None else len(spatial_idx)
+        ntimes = len(reader.dates)
         data = np.full((ntimes, npositions), np.nan)
-        for t, dt in enumerate(reader.dates):
-            # For 2-D vars: get_var returns (npositions,).
-            # For 3-D vars: get_var returns (nz, npositions); select zlev.
-            raw = reader.get_var(var, target_datetime=dt)
-            data[t, :] = raw[zlev, :] if zlev is not None else raw
+
+        # Build a per-file list of (global_time_indices, local_time_indices)
+        # using the reader's internal time→file mapping.
+        file_slices: dict[str, list] = {}
+        for global_t, dt in enumerate(reader.dates):
+            fp, local_t = reader._time_to_file_map[dt]
+            file_slices.setdefault(fp, []).append((global_t, local_t))
+
+        for fp, index_pairs in file_slices.items():
+            global_idxs = [p[0] for p in index_pairs]
+            local_idxs  = [p[1] for p in index_pairs]
+            with _Dataset(fp) as ds:
+                raw = ds.variables[var][local_idxs, ...]   # (n_t_local, ...)
+                if np.ma.is_masked(raw):
+                    raw = np.ma.getdata(raw)
+                if zlev is not None:
+                    # 3-D variable: (n_t_local, nz, npositions)
+                    slice_ = raw[:, zlev, :] if spatial_idx is None else raw[:, zlev, :][:, spatial_idx]
+                else:
+                    # 2-D variable: (n_t_local, npositions)
+                    slice_ = raw if spatial_idx is None else raw[:, spatial_idx]
+                data[global_idxs, :] = slice_
+
         return data
 
