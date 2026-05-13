@@ -495,12 +495,45 @@ class HarmonicAnalysisWriter(FVCOMWriter):
                                       'coordinates': coords}, ncopts=ncopts)
 
 
+def _solve_one(args: tuple):
+    """Solve UTide harmonics for a single spatial position.
+
+    Defined at module level for :mod:`multiprocessing` pickle compatibility.
+    Each argument is packed into a single tuple by :func:`analyse_harmonics`.
+
+    Returns
+    -------
+    tuple or None
+        ``(phase, amplitude, predicted_or_None)`` on success; ``None`` when
+        the position has a NaN latitude (output row is left as NaN).
+    """
+    import warnings
+    times, u, lat, constit, epoch, verbose, predict = args
+    if np.isnan(lat):
+        return None
+    with warnings.catch_warnings():
+        warnings.filterwarnings('ignore', category=RuntimeWarning, module='utide')
+        res = utide_solve(t=times, u=u, lat=lat, method='ols',
+                          constit=constit, epoch=epoch, verbose=verbose)
+    c_order = [res['name'].tolist().index(cc) for cc in constit]
+    g = res['g'][c_order]   # phase
+    A = res['A'][c_order]   # amplitude
+    h = None
+    if predict:
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', category=RuntimeWarning, module='utide')
+            rec = reconstruct(t=times, coef=res, epoch=epoch, verbose=verbose)
+        h = rec['h']
+    return (g, A, h)
+
+
 def analyse_harmonics(
     times: np.ndarray,
     elevations: np.ndarray,
     latitudes: np.ndarray,
     predict: bool = False,
     constit: tuple = DEFAULT_CONSTIT,
+    pool_size: int = 1,
     **kwargs,
 ) -> np.ndarray:
     """Run UTide harmonic analysis on a set of time series.
@@ -520,6 +553,14 @@ def analyse_harmonics(
     constit : tuple, optional
         Tidal constituent names to include in the analysis. Defaults to
         DEFAULT_CONSTIT.
+    pool_size : int, optional
+        Number of worker processes to use. ``1`` (default) runs a simple
+        serial loop. Values greater than 1 dispatch positions across a
+        :class:`multiprocessing.Pool` via ``imap``, producing near-linear
+        speedup on multi-core machines. Use ``multiprocessing.cpu_count()``
+        to utilise all available cores. Tasks are yielded lazily so that
+        memory use scales with *pool_size*, not with *npositions* — important
+        for long records (hourly or sub-hourly over months).
     **kwargs
         Additional keyword arguments forwarded to :func:`utide.solve`. The
         ``verbose`` key is also forwarded to :func:`utide.reconstruct` when
@@ -541,6 +582,9 @@ def analyse_harmonics(
     The output arrays are always re-sorted to match the order given in
     *constit*.
     """
+    from multiprocessing import Pool
+    import warnings
+
     npositions = len(latitudes)
     harmonics = np.full((npositions, 2, len(constit)), np.nan)
     if predict:
@@ -549,22 +593,52 @@ def analyse_harmonics(
     # Extract verbose for reconstruct; utide.solve also accepts it via **kwargs.
     verbose = kwargs.get('verbose', False)
 
-    for i, (timeseries, lat) in enumerate(zip(elevations, latitudes)):
-        if np.isnan(lat):
-            continue
+    if pool_size == 1:
+        # ── Serial path ───────────────────────────────────────────────────────
+        for i, (timeseries, lat) in enumerate(zip(elevations, latitudes)):
+            if np.isnan(lat):
+                continue
 
-        res = utide_solve(t=times, u=timeseries, lat=lat, method='ols',
-                          constit=constit, epoch=MJD_ZERO_POINT, **kwargs)
+            with warnings.catch_warnings():
+                warnings.filterwarnings('ignore', category=RuntimeWarning, module='utide')
+                res = utide_solve(t=times, u=timeseries, lat=lat, method='ols',
+                                  constit=constit, epoch=MJD_ZERO_POINT, **kwargs)
 
-        # UTide returns constituents in a different order; re-sort to match constit.
-        c_order = [res['name'].tolist().index(cc) for cc in constit]
-        harmonics[i, 0, :] = res['g'][c_order]   # phase
-        harmonics[i, 1, :] = res['A'][c_order]   # amplitude
+            # UTide returns constituents in a different order; re-sort to match constit.
+            c_order = [res['name'].tolist().index(cc) for cc in constit]
+            harmonics[i, 0, :] = res['g'][c_order]   # phase
+            harmonics[i, 1, :] = res['A'][c_order]   # amplitude
 
-        if predict:
-            reconstructed = reconstruct(t=times, coef=res, epoch=MJD_ZERO_POINT,
-                                        verbose=verbose)
-            predicted[i, :] = reconstructed['h']
+            if predict:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings('ignore', category=RuntimeWarning, module='utide')
+                    reconstructed = reconstruct(t=times, coef=res,
+                                                epoch=MJD_ZERO_POINT,
+                                                verbose=verbose)
+                predicted[i, :] = reconstructed['h']
+    else:
+        # ── Parallel path ─────────────────────────────────────────────────────
+        # Tasks are yielded lazily so only pool_size * chunksize time-series
+        # arrays are held in memory at any one time — important for long
+        # records (hourly/sub-hourly over months).
+        def _task_gen():
+            for u, lat in zip(elevations, latitudes):
+                yield (times, u, lat, constit, MJD_ZERO_POINT, verbose, predict)
+
+        # chunksize batches tasks per IPC round-trip: small enough to keep
+        # memory bounded, large enough to amortise round-trip overhead.
+        chunksize = max(1, pool_size * 4)
+        with Pool(processes=pool_size) as pool:
+            for i, result in enumerate(
+                pool.imap(_solve_one, _task_gen(), chunksize=chunksize)
+            ):
+                if result is None:
+                    continue   # NaN latitude — leave output row as NaN
+                g, A, h = result
+                harmonics[i, 0, :] = g
+                harmonics[i, 1, :] = A
+                if predict and h is not None:
+                    predicted[i, :] = h
 
     if predict:
         return harmonics, predicted
@@ -609,6 +683,11 @@ class HarmonicsAnalyser:
     verbose : bool, optional
         If True, print UTide's per-solve progress messages (``"solve: matrix
         prep … solution … done."``). Defaults to False.
+    pool_size : int, optional
+        Number of worker processes for parallel analysis. ``1`` (default)
+        runs serially. Set to the number of physical cores (e.g.
+        ``multiprocessing.cpu_count()``) for maximum throughput. Passed
+        directly to :func:`analyse_harmonics`.
 
     Examples
     --------
@@ -629,6 +708,7 @@ class HarmonicsAnalyser:
         node_indices: np.ndarray = None,
         element_indices: np.ndarray = None,
         verbose: bool = False,
+        pool_size: int = 1,
     ):
         self._reader = reader
         self._output_file = output_file
@@ -638,6 +718,7 @@ class HarmonicsAnalyser:
         self._node_indices = node_indices
         self._element_indices = element_indices
         self._verbose = verbose
+        self._pool_size = pool_size
 
         # Pre-compute MJD times once — used by analyse_harmonics and write_fvcom_time.
         self._times = date2num(
@@ -750,6 +831,7 @@ class HarmonicsAnalyser:
                     self._times, data.T, latitudes,
                     predict=self._predict,
                     constit=self._constit,
+                    pool_size=self._pool_size,
                     verbose=self._verbose,
                 )
                 if self._predict:
@@ -769,6 +851,7 @@ class HarmonicsAnalyser:
                 self._times, data.T, latitudes,
                 predict=self._predict,
                 constit=self._constit,
+                pool_size=self._pool_size,
                 verbose=self._verbose,
             )
             if self._predict:
