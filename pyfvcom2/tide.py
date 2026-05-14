@@ -1,6 +1,8 @@
 from pyfvcom2.exceptions import PyFVCOM2ValueError
 import pandas
 import numpy as np
+import sys
+import time
 from typing import Optional
 from netCDF4 import date2num
 from datetime import datetime, timedelta
@@ -20,6 +22,62 @@ MJD_ZERO_POINT = "1858-11-17"
 # Default tidal constituents: eight primaries + three shallow-water.
 DEFAULT_CONSTIT = ('M2', 'S2', 'N2', 'K2', 'K1', 'O1', 'P1', 'Q1', 'M4', 'MS4', 'MN4')
 
+
+# ── Private progress-reporting helpers ────────────────────────────────────────
+
+def _fmt_time(seconds: float) -> str:
+    """Format a duration in seconds as a compact human-readable string."""
+    s = int(seconds)
+    if s < 60:
+        return f'{s}s'
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f'{m}m {s:02d}s'
+    h, m = divmod(m, 60)
+    return f'{h}h {m:02d}m'
+
+
+def _print_progress(label: str, done: int, total: int, t_start: float,
+                    _state: list) -> None:
+    """Write a rate-limited progress line to stdout.
+
+    Parameters
+    ----------
+    label : str
+        Short description shown on the left (e.g. ``'zeta'`` or ``'u [σ 3/20]'``).
+    done : int
+        Number of positions completed so far.
+    total : int
+        Total number of positions to process.
+    t_start : float
+        Timestamp (from :func:`time.perf_counter`) when processing started.
+    _state : list
+        Single-element mutable list ``[last_print_time]`` used to rate-limit
+        output to at most once per second.  Pass ``[0.0]`` on first call.
+    """
+    now = time.perf_counter()
+    finished = done >= total
+    if not finished and (now - _state[0]) < 1.0:
+        return
+    _state[0] = now
+
+    elapsed = now - t_start
+    pct = 100.0 * done / total
+    w = len(str(total))   # field width for counts
+    if done > 0:
+        eta_str = _fmt_time(elapsed * (total - done) / done)
+    else:
+        eta_str = '?'
+
+    line = (f'  {label:<20s}: {done:{w}d}/{total}  ({pct:5.1f}%)'
+            f'  elapsed {_fmt_time(elapsed):>7s}  ETA {eta_str:>7s}')
+    if finished:
+        print(f'\r{line}', flush=True)
+    else:
+        print(f'\r{line}', end='', flush=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 
 class TideManager:
     """Manages tidal harmonics interpolation and prediction.
@@ -534,6 +592,7 @@ def analyse_harmonics(
     predict: bool = False,
     constit: tuple = DEFAULT_CONSTIT,
     pool_size: int = 1,
+    label: str = '',
     **kwargs,
 ) -> np.ndarray:
     """Run UTide harmonic analysis on a set of time series.
@@ -561,6 +620,12 @@ def analyse_harmonics(
         to utilise all available cores. Tasks are yielded lazily so that
         memory use scales with *pool_size*, not with *npositions* — important
         for long records (hourly or sub-hourly over months).
+    label : str, optional
+        If non-empty, a live progress line is printed to stdout showing
+        completed positions, elapsed time, and estimated time remaining.
+        :class:`HarmonicsAnalyser` sets this automatically when
+        ``show_progress=True``; it can also be set directly when calling
+        :func:`analyse_harmonics` standalone. Defaults to ``''`` (no output).
     **kwargs
         Additional keyword arguments forwarded to :func:`utide.solve`. The
         ``verbose`` key is also forwarded to :func:`utide.reconstruct` when
@@ -593,9 +658,16 @@ def analyse_harmonics(
     # Extract verbose for reconstruct; utide.solve also accepts it via **kwargs.
     verbose = kwargs.get('verbose', False)
 
+    # Progress tracking: _state[0] holds the timestamp of the last print.
+    _state = [0.0]
+    t_start = time.perf_counter()
+
     if pool_size == 1:
         # ── Serial path ───────────────────────────────────────────────────────
         for i, (timeseries, lat) in enumerate(zip(elevations, latitudes)):
+            if label:
+                _print_progress(label, i, npositions, t_start, _state)
+
             if np.isnan(lat):
                 continue
 
@@ -616,6 +688,9 @@ def analyse_harmonics(
                                                 epoch=MJD_ZERO_POINT,
                                                 verbose=verbose)
                 predicted[i, :] = reconstructed['h']
+
+        if label:
+            _print_progress(label, npositions, npositions, t_start, _state)
     else:
         # ── Parallel path ─────────────────────────────────────────────────────
         # Tasks are yielded lazily so only pool_size * chunksize time-series
@@ -632,6 +707,8 @@ def analyse_harmonics(
             for i, result in enumerate(
                 pool.imap(_solve_one, _task_gen(), chunksize=chunksize)
             ):
+                if label:
+                    _print_progress(label, i, npositions, t_start, _state)
                 if result is None:
                     continue   # NaN latitude — leave output row as NaN
                 g, A, h = result
@@ -639,6 +716,9 @@ def analyse_harmonics(
                 harmonics[i, 1, :] = A
                 if predict and h is not None:
                     predicted[i, :] = h
+
+        if label:
+            _print_progress(label, npositions, npositions, t_start, _state)
 
     if predict:
         return harmonics, predicted
@@ -688,6 +768,11 @@ class HarmonicsAnalyser:
         runs serially. Set to the number of physical cores (e.g.
         ``multiprocessing.cpu_count()``) for maximum throughput. Passed
         directly to :func:`analyse_harmonics`.
+    show_progress : bool, optional
+        If True (default), print a live progress line to stdout for each
+        variable (and each sigma layer for 3-D variables) showing the count
+        of completed positions, elapsed time, and estimated time remaining.
+        Set to False to suppress all progress output.
 
     Examples
     --------
@@ -709,6 +794,7 @@ class HarmonicsAnalyser:
         element_indices: np.ndarray = None,
         verbose: bool = False,
         pool_size: int = 1,
+        show_progress: bool = True,
     ):
         self._reader = reader
         self._output_file = output_file
@@ -719,6 +805,7 @@ class HarmonicsAnalyser:
         self._element_indices = element_indices
         self._verbose = verbose
         self._pool_size = pool_size
+        self._show_progress = show_progress
 
         # Pre-compute MJD times once — used by analyse_harmonics and write_fvcom_time.
         self._times = date2num(
@@ -826,12 +913,14 @@ class HarmonicsAnalyser:
                 if self._dump_raw:
                     raw[:, zlev, :] = data
 
+                label = f'{var} [\u03c3 {zlev + 1}/{nz}]' if self._show_progress else ''
                 # analyse_harmonics expects elevations as (npositions, ntimes)
                 result = analyse_harmonics(
                     self._times, data.T, latitudes,
                     predict=self._predict,
                     constit=self._constit,
                     pool_size=self._pool_size,
+                    label=label,
                     verbose=self._verbose,
                 )
                 if self._predict:
@@ -847,11 +936,13 @@ class HarmonicsAnalyser:
             if self._dump_raw:
                 raw = data.copy()
 
+            label = var if self._show_progress else ''
             result = analyse_harmonics(
                 self._times, data.T, latitudes,
                 predict=self._predict,
                 constit=self._constit,
                 pool_size=self._pool_size,
+                label=label,
                 verbose=self._verbose,
             )
             if self._predict:
