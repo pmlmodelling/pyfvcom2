@@ -2,6 +2,7 @@
 
 __all__ = ["CMEMSReader", "default_fvcom_to_cmems_var_names"]
 
+import bisect
 from datetime import datetime
 import numpy as np
 import xarray as xr
@@ -187,6 +188,53 @@ class CMEMSReader:
         dataset = xr.open_dataset(required_file_path)
 
         return dataset, local_time_index
+
+    def _get_bracketing_times(self, target_datetime):
+        """Find the two CMEMS time steps that bracket a target datetime.
+
+        Used to support linear temporal interpolation when the requested output
+        time step lies between two source time steps (e.g. hourly output from
+        daily CMEMS data).
+
+        Args:
+            target_datetime: The target datetime (datetime or np.datetime64).
+
+        Returns:
+            tuple: (t0, t1, alpha) where t0 and t1 are the bounding CMEMS
+            datetimes (np.datetime64) and alpha is the fractional weight for t1
+            so that the interpolated value is ``(1 - alpha)*v(t0) + alpha*v(t1)``.
+            When target_datetime exactly matches a CMEMS time step, t0 == t1
+            and alpha == 0.0.
+        """
+        if isinstance(target_datetime, datetime):
+            target_datetime = np.datetime64(target_datetime)
+
+        if len(self._all_dates) == 0:
+            raise PyFVCOM2ValueError("No dates available in the dataset(s)")
+
+        start_date = self._all_dates[0]
+        end_date = self._all_dates[-1]
+
+        if target_datetime < start_date or target_datetime > end_date:
+            raise PyFVCOM2ValueError(
+                f"Target datetime {target_datetime} is outside the available data range "
+                f"[{start_date} to {end_date}]"
+            )
+
+        # Exact match — no interpolation needed
+        if target_datetime in self._time_to_file_map:
+            return target_datetime, target_datetime, 0.0
+
+        # Find the index of the first CMEMS time strictly greater than target
+        idx = bisect.bisect_right(self._all_dates, target_datetime)
+        t0 = self._all_dates[idx - 1]
+        t1 = self._all_dates[idx]
+
+        dt_total = (t1 - t0) / np.timedelta64(1, 's')
+        dt_target = (target_datetime - t0) / np.timedelta64(1, 's')
+        alpha = float(dt_target / dt_total)
+
+        return t0, t1, alpha
 
     def _set_masks(self):
         """Use reference variable to infer the mask"""
