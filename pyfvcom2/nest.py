@@ -228,6 +228,32 @@ class NestManager:
                 all_nodes.extend(unique_nodes)
                 all_elements.extend(unique_elements)
 
+            # Find elements that are fully enclosed by the outermost band's nodes
+            # but were missed by find_connected_elements. This happens when all
+            # three nodes of an element are new nodes introduced in the last
+            # iteration, so none of them served as reference nodes for that call.
+            # FVCOM implicitly includes these elements when building a nest from
+            # node IDs alone, so omitting them creates an inconsistency.
+            if num_grid_bands > 0 and len(nest.grid_bands) > 0:
+                outermost_nodes = reference_nodes
+                candidate_elements = np.flatnonzero(
+                    np.all(np.isin(self._grid_ref.triangles, outermost_nodes), axis=1)
+                ).tolist()
+                missing_elements = np.setdiff1d(candidate_elements, all_elements).tolist()
+                if missing_elements:
+                    last_band = nest.grid_bands[-1]
+                    last_band._elements = last_band._elements + missing_elements
+                    if last_band._element_weights is not None:
+                        missing_weights = self._weights_calculator.calculate_weights(
+                            n=len(missing_elements),
+                            n_bands=num_grid_bands,
+                            grid_band_index=num_grid_bands - 1
+                        )
+                        last_band._element_weights = np.concatenate(
+                            [last_band._element_weights, missing_weights]
+                        )
+                    all_elements.extend(missing_elements)
+
             # Add nest
             self.add_nest(nest)
 
