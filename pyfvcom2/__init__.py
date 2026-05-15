@@ -89,6 +89,9 @@ from .nest import (
     GridBand,
 )
 
+# Import OBC forcing functionality
+from .obc import OBCManager
+
 # Import weights calculator
 from .weights_calculator import (
     get_weights_calculator,
