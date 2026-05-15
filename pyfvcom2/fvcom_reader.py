@@ -12,7 +12,7 @@ from .interpolation_coordinates import InterpolationCoordinates
 from .coordinates import sigma_to_z_coords
 from .grid import Grid, nodes2elems
 from .mesh_reader import MeshData
-from .sigma_reader import SigmaData
+from .sigma import SigmaData
 from .date_utils import round_time
 from .exceptions import PyFVCOM2ValueError
 

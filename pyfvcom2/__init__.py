@@ -37,7 +37,7 @@ from .mesh_reader import (
 )
 
 # Import sigma coordinate functionality
-from .sigma_reader import (
+from .sigma import (
     SigmaData,
     SigmaConfig,
     read_sigma_file,

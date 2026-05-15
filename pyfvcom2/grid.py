@@ -2,7 +2,7 @@ import numpy as np
 from typing import Optional
 
 from .mesh_reader import MeshData, read_mesh_file
-from .sigma_reader import SigmaConfig, SigmaData, process_sigma_config, read_sigma_file
+from .sigma import SigmaConfig, SigmaData, process_sigma_config, read_sigma_file, write_sigma_file
 from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
 from .interpolation_coordinates import InterpolationCoordinates

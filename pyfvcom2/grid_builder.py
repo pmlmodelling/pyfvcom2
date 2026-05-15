@@ -1,7 +1,7 @@
 from typing import Optional
 
 from .mesh_reader import read_mesh_file
-from .sigma_reader import read_sigma_file
+from .sigma import read_sigma_file
 from .grid import Grid
 
 
