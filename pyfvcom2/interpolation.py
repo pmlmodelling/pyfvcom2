@@ -122,8 +122,15 @@ class CMEMSInterpolator(Interpolator):
         for d_idx, target_date in enumerate(dates):
             print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
 
-            # Get the filled 2D CMEMS variable data on the regular grid
-            var_filled = self.cmems_reader.get_filled_2D_var(cmems_var_name, target_date)
+            # Get the filled 2D CMEMS variable data on the regular grid, with
+            # linear interpolation in time between bracketing CMEMS time steps.
+            t0, t1, alpha = self.cmems_reader._get_bracketing_times(target_date)
+            var_filled_0 = self.cmems_reader.get_filled_2D_var(cmems_var_name, t0)
+            if alpha == 0.0:
+                var_filled = var_filled_0
+            else:
+                var_filled_1 = self.cmems_reader.get_filled_2D_var(cmems_var_name, t1)
+                var_filled = (1.0 - alpha) * var_filled_0 + alpha * var_filled_1
 
             # Interpolate from the regular grid onto the FVCOM points
             interp = interpolate.RegularGridInterpolator(
@@ -163,9 +170,16 @@ class CMEMSInterpolator(Interpolator):
 
         for d_idx, target_date in enumerate(dates):
             print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
-            
-            # Get the filled 3D CMEMS variable data
-            var_filled = self.cmems_reader.get_filled_3D_var(cmems_var_name, target_date)
+
+            # Get the filled 3D CMEMS variable data, with linear interpolation
+            # in time between bracketing CMEMS time steps.
+            t0, t1, alpha = self.cmems_reader._get_bracketing_times(target_date)
+            var_filled_0 = self.cmems_reader.get_filled_3D_var(cmems_var_name, t0)
+            if alpha == 0.0:
+                var_filled = var_filled_0
+            else:
+                var_filled_1 = self.cmems_reader.get_filled_3D_var(cmems_var_name, t1)
+                var_filled = (1.0 - alpha) * var_filled_0 + alpha * var_filled_1
 
             # First, interpolate onto the horizontal grid for each depth level
             var_on_fvcom_horizontal_grid = np.empty(
