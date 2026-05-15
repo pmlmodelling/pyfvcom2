@@ -325,6 +325,93 @@ class Grid:
 
         return InterpolationCoordinates(dates, x3, x2, x1, horizontal_coordinate_system=horizontal_coordinate_system, vertical_coordinate_system=vertical_coordinate_system)
 
+    def write_grid(self, grid_file: str, coordinate_system: str, depth_file: Optional[str] = None) -> None:
+        """Write the unstructured grid to an FVCOM-formatted ASCII file.
+
+        Args:
+            grid_file: Path to the output grid file.
+            coordinate_system: Which coordinates to write, either 'geographic' (lon/lat) or 'cartesian' (x/y).
+            depth_file: If given, also write a separate FVCOM depth file.
+        """
+        import warnings
+        if coordinate_system == 'geographic':
+            x, y = self.lon, self.lat
+        elif coordinate_system == 'cartesian':
+            x, y = self.x, self.y
+        else:
+            raise PyFVCOM2ValueError(
+                "coordinate_system must be either 'geographic' or 'cartesian'. "
+                f"Received '{coordinate_system}'."
+            )
+
+        depth = self.h.copy()
+        if np.sum(depth < 0) > np.sum(depth > 0):
+            depth = -depth
+            warnings.warn('Flipping depths to be positive down since mostly negative depths were supplied.')
+
+        nodes = np.arange(self.n_nodes) + 1
+        with open(grid_file, 'w') as f:
+            f.write('Node Number = {:d}\n'.format(self.n_nodes))
+            f.write('Cell Number = {:d}\n'.format(self.n_elements))
+            for i, triangle in enumerate(self.triangles, 1):
+                f.write('{node:d} {:d} {:d} {:d} {node:d}\n'.format(node=i, *triangle + 1))
+            for node in zip(nodes, x, y, depth):
+                f.write('{:d} {:.6f} {:.6f} {:.6f}\n'.format(*node))
+
+        if depth_file is not None:
+            with open(depth_file, 'w') as f:
+                f.write('Node Number = {:d}\n'.format(self.n_nodes))
+                for row in zip(x, y, depth):
+                    f.write('{:.6f} {:.6f} {:.6f}\n'.format(*row))
+
+    def write_coriolis(self, coriolis_file: str, coordinate_system: str) -> None:
+        """Write an FVCOM-formatted Coriolis file.
+
+        Args:
+            coriolis_file: Path to the output Coriolis file.
+            coordinate_system: Which horizontal coordinates to write alongside latitude,
+                either 'geographic' (lon/lat) or 'cartesian' (x/y).
+        """
+        if coordinate_system == 'geographic':
+            x, y = self.lon, self.lat
+        elif coordinate_system == 'cartesian':
+            x, y = self.x, self.y
+        else:
+            raise PyFVCOM2ValueError(
+                "coordinate_system must be either 'geographic' or 'cartesian'. "
+                f"Received '{coordinate_system}'."
+            )
+
+        with open(coriolis_file, 'w') as f:
+            f.write('Node Number = {:d}\n'.format(self.n_nodes))
+            for row in zip(x, y, self.lat):
+                f.write('{:.6f} {:.6f} {:.6f}\n'.format(*row))
+
+    def write_obc(self, obc_file: str) -> None:
+        """Write open boundary node IDs and types to an FVCOM-formatted ASCII file.
+
+        Args:
+            obc_file: Path to the output open boundary file.
+        """
+        ids = []
+        types = []
+        for boundary in self.open_boundaries:
+            ids.extend(boundary.node_indices.tolist())
+            types.extend([boundary.bdy_id] * boundary.nnodes)
+
+        with open(obc_file, 'w') as f:
+            f.write('OBC Node Number = {:d}\n'.format(len(ids)))
+            for count, node, obc_type in zip(np.arange(len(ids)) + 1, ids, types):
+                f.write('{} {:d} {:d}\n'.format(count, int(node) + 1, int(obc_type)))
+
+    def write_sigma(self, sigma_file: str) -> None:
+        """Write the sigma coordinate configuration to an FVCOM-formatted ASCII file.
+
+        Args:
+            sigma_file: Path to the output sigma file.
+        """
+        write_sigma_file(self.sigma_config, sigma_file)
+
 
 def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_system: str,
                 epsg_code: Optional[str] = None, **kwargs) -> Grid:
