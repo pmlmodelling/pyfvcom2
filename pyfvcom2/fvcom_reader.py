@@ -188,6 +188,26 @@ class FVCOMReader:
         return self.grid.latc
 
     @property
+    def x_nodes(self):
+        """Get the Cartesian x-coordinates at nodes."""
+        return self.grid.x
+
+    @property
+    def y_nodes(self):
+        """Get the Cartesian y-coordinates at nodes."""
+        return self.grid.y
+
+    @property
+    def x_elements(self):
+        """Get the Cartesian x-coordinates of element centroids."""
+        return self.grid.xc
+
+    @property
+    def y_elements(self):
+        """Get the Cartesian y-coordinates of element centroids."""
+        return self.grid.yc
+
+    @property
     def sigma_layers_nodes(self):
         """Get the sigma layer values at nodes (n_layers, n_nodes)."""
         return self.grid.sigma_layers.T
@@ -329,33 +349,6 @@ class FVCOMReader:
                 return self.grid.sigmac_layers.T
             else:
                 return self.grid.sigmac_levels.T
-
-    def get_z_levels(self, var_name: str) -> np.ndarray:
-        """Get static z levels/layers for the variable
-
-        Returns static z levels while assuming zeta is zero. If you want time
-        varying z levels, use the function get_time_dep_z_levels instead.
-
-        Args:
-            var_name (str): The name of the variable.
-        
-        Returns:
-            np.ndarray: Static z coordinates array
-        """
-        var_is_node_based = self.var_is_node_based(var_name)
-
-        vertical_position = self.get_vertical_position(var_name)
-
-        if var_is_node_based:
-            if vertical_position == 'layer_centre':
-                return self.grid.z_layers_static.T
-            else:
-                return self.grid.z_levels_static.T
-        else:
-            if vertical_position == 'layer_centre':
-                return self.grid.zc_layers_static.T
-            else:
-                return self.grid.zc_levels_static.T
 
     def get_time_dep_z_levels(self, var_name: str, target_datetime: datetime=None,
                               tolerance: Optional[timedelta]=None, zeta_var_name: str='zeta',

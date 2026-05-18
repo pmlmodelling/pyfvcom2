@@ -197,14 +197,44 @@ class Grid:
         return self.latc
 
     @property
+    def x_nodes(self):
+        """Get the Cartesian x-coordinates at nodes."""
+        return self.x
+
+    @property
+    def y_nodes(self):
+        """Get the Cartesian y-coordinates at nodes."""
+        return self.y
+
+    @property
+    def x_elements(self):
+        """Get the Cartesian x-coordinates of element centroids."""
+        return self.xc
+
+    @property
+    def y_elements(self):
+        """Get the Cartesian y-coordinates of element centroids."""
+        return self.yc
+
+    @property
     def sigma_layers_nodes(self):
-        """Get the sigma layer values at nodes."""
-        return self.sigma_layers
+        """Get the sigma layer values at nodes (n_layers, n_nodes)."""
+        return self.sigma_layers.T
 
     @property
     def sigma_layers_elements(self):
-        """Get the sigma layer values at element centroids."""
-        return self.sigmac_layers
+        """Get the sigma layer values at element centroids (n_layers, n_elements)."""
+        return self.sigmac_layers.T
+
+    @property
+    def sigma_levels_nodes(self):
+        """Get the sigma level values at nodes (n_levels, n_nodes)."""
+        return self.sigma_levels.T
+
+    @property
+    def sigma_levels_elements(self):
+        """Get the sigma level values at element centroids (n_levels, n_elements)."""
+        return self.sigmac_levels.T
 
     @property
     def bathy_nodes(self):
