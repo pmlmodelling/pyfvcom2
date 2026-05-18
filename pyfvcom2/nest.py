@@ -371,8 +371,8 @@ class NestManager:
                 x1 = self._grid_ref.lon_nodes[indices]
                 x2 = self._grid_ref.lat_nodes[indices]
             else:  # cartesian
-                x1 = self._grid_ref.x[indices]
-                x2 = self._grid_ref.y[indices]
+                x1 = self._grid_ref.x_nodes[indices]
+                x2 = self._grid_ref.y_nodes[indices]
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
                     x3 = self._grid_ref.z_levels_static[indices, :].T
@@ -389,8 +389,8 @@ class NestManager:
                 x1 = self._grid_ref.lon_elements[indices]
                 x2 = self._grid_ref.lat_elements[indices]
             else:  # cartesian
-                x1 = self._grid_ref.xc[indices]
-                x2 = self._grid_ref.yc[indices]
+                x1 = self._grid_ref.x_elements[indices]
+                x2 = self._grid_ref.y_elements[indices]
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
                     x3 = self._grid_ref.zc_levels_static[indices, :].T
@@ -624,39 +624,39 @@ class NestManager:
             # Add space variables
             # -------------------
             atts = {'units': 'meters', 'long_name': 'nodal x-coordinate'}
-            nest_ncfile.add_variable('x', self._grid_ref.x[nodes], ['node'], 
+            nest_ncfile.add_variable('x', self._grid_ref.x_nodes[nodes], ['node'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'meters', 'long_name': 'nodal y-coordinate'}
-            nest_ncfile.add_variable('y', self._grid_ref.y[nodes], ['node'], 
+            nest_ncfile.add_variable('y', self._grid_ref.y_nodes[nodes], ['node'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'degrees_east', 'standard_name': 'longitude', 
                     'long_name': 'nodal longitude'}
-            nest_ncfile.add_variable('lon', self._grid_ref.lon[nodes], ['node'], 
+            nest_ncfile.add_variable('lon', self._grid_ref.lon_nodes[nodes], ['node'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'degrees_north', 'standard_name': 'latitude', 
                     'long_name': 'nodal latitude'}
-            nest_ncfile.add_variable('lat', self._grid_ref.lat[nodes], ['node'], 
+            nest_ncfile.add_variable('lat', self._grid_ref.lat_nodes[nodes], ['node'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'meters', 'long_name': 'zonal x-coordinate'}
-            nest_ncfile.add_variable('xc', self._grid_ref.xc[elements], ['nele'], 
+            nest_ncfile.add_variable('xc', self._grid_ref.x_elements[elements], ['nele'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'meters', 'long_name': 'zonal y-coordinate'}
-            nest_ncfile.add_variable('yc', self._grid_ref.yc[elements], ['nele'], 
+            nest_ncfile.add_variable('yc', self._grid_ref.y_elements[elements], ['nele'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'degrees_east', 'standard_name': 'longitude', 
                     'long_name': 'zonal longitude'}
-            nest_ncfile.add_variable('lonc', self._grid_ref.lonc[elements], 
+            nest_ncfile.add_variable('lonc', self._grid_ref.lon_elements[elements], 
                     ['nele'], attributes=atts, ncopts=ncopts)
 
             atts = {'units': 'degrees_north', 'standard_name': 'latitude', 
                     'long_name': 'zonal latitude'}
-            nest_ncfile.add_variable('latc', self._grid_ref.latc[elements], 
+            nest_ncfile.add_variable('latc', self._grid_ref.lat_elements[elements], 
                     ['nele'], attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'nodes surrounding element'}
@@ -712,7 +712,7 @@ class NestManager:
                     'grid': 'Bathymetry_mesh',
                     'coordinates': 'x y',
                     'type': 'data'}
-            nest_ncfile.add_variable('h', self._grid_ref.h[nodes], ['node'], 
+            nest_ncfile.add_variable('h', self._grid_ref.bathy_nodes[nodes], ['node'], 
                     attributes=atts, ncopts=ncopts)
 
             atts = {'long_name': 'Bathymetry',
@@ -722,7 +722,7 @@ class NestManager:
                     'grid': 'grid1 grid3',
                     'coordinates': 'latc lonc',
                     'grid_location': 'center'}
-            nest_ncfile.add_variable('h_center', self._grid_ref.hc[elements], 
+            nest_ncfile.add_variable('h_center', self._grid_ref.bathy_elements[elements], 
                     ['nele'], attributes=atts, ncopts=ncopts)
 
             if nest_type == 3:

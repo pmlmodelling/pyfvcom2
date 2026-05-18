@@ -268,8 +268,8 @@ class FVCOMInterpolator(Interpolator):
             return self._triangulation_nodes_cartesian
 
         self._triangulation_nodes_cartesian = Triangulation(
-            self.fvcom_reader.grid.x,
-            self.fvcom_reader.grid.y,
+            self.fvcom_reader.x_nodes,
+            self.fvcom_reader.y_nodes,
             triangles=self.fvcom_reader.grid.triangles)
         return self._triangulation_nodes_cartesian
 
@@ -280,8 +280,8 @@ class FVCOMInterpolator(Interpolator):
             return self._triangulation_nodes_geographic
 
         self._triangulation_nodes_geographic = Triangulation(
-            self.fvcom_reader.grid.lon,
-            self.fvcom_reader.grid.lat,
+            self.fvcom_reader.lon_nodes,
+            self.fvcom_reader.lat_nodes,
             triangles=self.fvcom_reader.grid.triangles)
         return self._triangulation_nodes_geographic
 
@@ -292,8 +292,8 @@ class FVCOMInterpolator(Interpolator):
             return self._triangulation_elements_cartesian
 
         self._triangulation_elements_cartesian = Triangulation(
-            self.fvcom_reader.grid.xc,
-            self.fvcom_reader.grid.yc)
+            self.fvcom_reader.x_elements,
+            self.fvcom_reader.y_elements)
         return self._triangulation_elements_cartesian
 
     @property
@@ -303,8 +303,8 @@ class FVCOMInterpolator(Interpolator):
             return self._triangulation_elements_geographic
 
         self._triangulation_elements_geographic = Triangulation(
-            self.fvcom_reader.grid.lonc,
-            self.fvcom_reader.grid.latc)
+            self.fvcom_reader.lon_elements,
+            self.fvcom_reader.lat_elements)
         return self._triangulation_elements_geographic
 
     def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str,
@@ -663,12 +663,12 @@ class FVCOMInterpolator(Interpolator):
         # Determine if variable is node or element based
         if var_is_node_based:
             # Node based variable
-            x = self.fvcom_reader.grid.x
-            y = self.fvcom_reader.grid.y
+            x = self.fvcom_reader.x_nodes
+            y = self.fvcom_reader.y_nodes
         else:
             # Element based variable
-            x = self.fvcom_reader.grid.xc
-            y = self.fvcom_reader.grid.yc
+            x = self.fvcom_reader.x_elements
+            y = self.fvcom_reader.y_elements
         
         # Create nearest-neighbor interpolator
         interpolator = interpolate.NearestNDInterpolator(

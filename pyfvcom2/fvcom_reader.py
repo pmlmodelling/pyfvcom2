@@ -170,42 +170,62 @@ class FVCOMReader:
     @property
     def lon_nodes(self):
         """Get the longitude values from the dataset."""
-        return self.grid.lon
+        return self.grid.lon_nodes
 
     @property
     def lat_nodes(self):
         """Get the latitude values from the dataset."""
-        return self.grid.lat
+        return self.grid.lat_nodes
 
     @property
     def lon_elements(self):
         """Get the longitude values of element centroids."""
-        return self.grid.lonc
+        return self.grid.lon_elements
 
     @property
     def lat_elements(self):
         """Get the latitude values of element centroids."""
-        return self.grid.latc
+        return self.grid.lat_elements
+
+    @property
+    def x_nodes(self):
+        """Get the Cartesian x-coordinates at nodes."""
+        return self.grid.x_nodes
+
+    @property
+    def y_nodes(self):
+        """Get the Cartesian y-coordinates at nodes."""
+        return self.grid.y_nodes
+
+    @property
+    def x_elements(self):
+        """Get the Cartesian x-coordinates of element centroids."""
+        return self.grid.x_elements
+
+    @property
+    def y_elements(self):
+        """Get the Cartesian y-coordinates of element centroids."""
+        return self.grid.y_elements
 
     @property
     def sigma_layers_nodes(self):
         """Get the sigma layer values at nodes (n_layers, n_nodes)."""
-        return self.grid.sigma_layers.T
+        return self.grid.sigma_layers_nodes
 
     @property
     def sigma_layers_elements(self):
         """Get the sigma layer values at element centroids (n_layers, n_elements)."""
-        return self.grid.sigmac_layers.T
+        return self.grid.sigma_layers_elements
 
     @property
     def sigma_levels_nodes(self):
         """Get the sigma level values at nodes (n_levels, n_nodes)."""
-        return self.grid.sigma_levels.T
+        return self.grid.sigma_levels_nodes
     
     @property
     def sigma_levels_elements(self):
         """Get the sigma level values at element centroids (n_levels, n_elements)."""
-        return self.grid.sigmac_levels.T
+        return self.grid.sigma_levels_elements
 
     @property
     def bathy_nodes(self):
@@ -321,41 +341,14 @@ class FVCOMReader:
 
         if var_is_node_based:
             if vertical_position == 'layer_centre':
-                return self.grid.sigma_layers.T
+                return self.grid.sigma_layers_nodes
             else:
-                return self.grid.sigma_levels.T
+                return self.grid.sigma_levels_nodes
         else:
             if vertical_position == 'layer_centre':
-                return self.grid.sigmac_layers.T
+                return self.grid.sigma_layers_elements
             else:
-                return self.grid.sigmac_levels.T
-
-    def get_z_levels(self, var_name: str) -> np.ndarray:
-        """Get static z levels/layers for the variable
-
-        Returns static z levels while assuming zeta is zero. If you want time
-        varying z levels, use the function get_time_dep_z_levels instead.
-
-        Args:
-            var_name (str): The name of the variable.
-        
-        Returns:
-            np.ndarray: Static z coordinates array
-        """
-        var_is_node_based = self.var_is_node_based(var_name)
-
-        vertical_position = self.get_vertical_position(var_name)
-
-        if var_is_node_based:
-            if vertical_position == 'layer_centre':
-                return self.grid.z_layers_static.T
-            else:
-                return self.grid.z_levels_static.T
-        else:
-            if vertical_position == 'layer_centre':
-                return self.grid.zc_layers_static.T
-            else:
-                return self.grid.zc_levels_static.T
+                return self.grid.sigma_levels_elements
 
     def get_time_dep_z_levels(self, var_name: str, target_datetime: datetime=None,
                               tolerance: Optional[timedelta]=None, zeta_var_name: str='zeta',

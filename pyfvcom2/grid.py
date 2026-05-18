@@ -77,19 +77,39 @@ class Grid:
     """A class to represent a triangular mesh.
 
     Attributes:
-        nodes (np.ndarray): N array of node coordinates.
-        triangles (np.ndarray): (n_elem, 3) array of triangle vertex indices.
-        x (np.ndarray): x coordinates of nodes.
-        y (np.ndarray): y coordinates of nodes.
-        h (np.ndarray): bathymetry at nodes.
-        xc (np.ndarray): x coordinates of triangle centroids.
-        yc (np.ndarray): y coordinates of triangle centroids.
-        hc (np.ndarray): bathymetry at triangle centroids.
-        lon (np.ndarray): Longitude of nodes.
-        lat (np.ndarray): Latitude of nodes.
-        lonc (np.ndarray): Longitude of triangle centroids.
-        latc (np.ndarray): Latitude of triangle centroids.
-        open_boundaries[OpenBoundary]): List of open boundary objects.
+        n_nodes (int): Number of nodes in the mesh.
+        n_elements (int): Number of elements in the mesh.
+        n_sigma_levels (int): Number of sigma levels in the vertical grid.
+        n_sigma_layers (int): Number of sigma layers in the vertical grid.
+        n_open_boundaries (int): Number of open boundaries.
+        epsg_code (str): EPSG code used for coordinate transformations.
+        lon_nodes (np.ndarray): Longitude of nodes.
+        lat_nodes (np.ndarray): Latitude of nodes.
+        lon_elements (np.ndarray): Longitude of element centroids.
+        lat_elements (np.ndarray): Latitude of element centroids.
+        x_nodes (np.ndarray): Cartesian x-coordinates of nodes.
+        y_nodes (np.ndarray): Cartesian y-coordinates of nodes.
+        x_elements (np.ndarray): Cartesian x-coordinates of element centroids.
+        y_elements (np.ndarray): Cartesian y-coordinates of element centroids.
+        bathy_nodes (np.ndarray): Bathymetry at nodes.
+        bathy_elements (np.ndarray): Bathymetry at element centroids.
+        triangles (np.ndarray): Triangle connectivity array of shape (n_elements, 3), 0-indexed.
+        types_bdy (np.ndarray): Boundary node type codes.
+        nodes_bdy (np.ndarray): Boundary node indices.
+        sigma_config (SigmaConfig): Sigma coordinate configuration.
+        sigma_levels (np.ndarray): Sigma level coordinates at nodes, shape (n_nodes, n_levels).
+        sigma_layers (np.ndarray): Sigma layer coordinates at nodes, shape (n_nodes, n_layers).
+        sigmac_levels (np.ndarray): Sigma level coordinates at element centroids, shape (n_elements, n_levels).
+        sigmac_layers (np.ndarray): Sigma layer coordinates at element centroids, shape (n_elements, n_layers).
+        sigma_levels_nodes (np.ndarray): Sigma level coordinates at nodes, shape (n_levels, n_nodes).
+        sigma_layers_nodes (np.ndarray): Sigma layer coordinates at nodes, shape (n_layers, n_nodes).
+        sigma_levels_elements (np.ndarray): Sigma level coordinates at element centroids, shape (n_levels, n_elements).
+        sigma_layers_elements (np.ndarray): Sigma layer coordinates at element centroids, shape (n_layers, n_elements).
+        z_layers_static (np.ndarray): Static z-coordinates at layer centres for nodes, shape (n_nodes, n_layers).
+        zc_layers_static (np.ndarray): Static z-coordinates at layer centres for element centroids, shape (n_elements, n_layers).
+        z_levels_static (np.ndarray): Static z-coordinates at layer interfaces for nodes, shape (n_nodes, n_levels).
+        zc_levels_static (np.ndarray): Static z-coordinates at layer interfaces for element centroids, shape (n_elements, n_levels).
+        open_boundaries (list[OpenBoundary]): List of open boundary objects.
     """
 
     def __init__(
@@ -99,22 +119,22 @@ class Grid:
         coordinate_system: str,
         epsg_code: Optional[str] = None,
     ):
-        self.triangles = mesh_data.triangle
-        self.types_bdy = mesh_data.types_bdy
-        self.nodes_bdy = mesh_data.nodes_bdy
+        self._triangles = mesh_data.triangle
+        self._types_bdy = mesh_data.types_bdy
+        self._nodes_bdy = mesh_data.nodes_bdy
 
         self._n_nodes = mesh_data.nodes.shape[0]
         self._n_elements = mesh_data.triangle.shape[0]
 
         if coordinate_system == "cartesian":
-            self.x = mesh_data.x1
-            self.y = mesh_data.x2
+            self._x = mesh_data.x1
+            self._y = mesh_data.x2
             self.epsg_code = epsg_code
-            self.lon, self.lat = lonlat_from_utm(self.x, self.y, epsg_code)
+            self._lon, self._lat = lonlat_from_utm(self._x, self._y, epsg_code)
         elif coordinate_system == "geographic":
-            self.lon = mesh_data.x1
-            self.lat = mesh_data.x2
-            self.x, self.y, self.epsg_code = utm_from_lonlat(self.lon, self.lat, epsg_code)
+            self._lon = mesh_data.x1
+            self._lat = mesh_data.x2
+            self._x, self._y, self.epsg_code = utm_from_lonlat(self._lon, self._lat, epsg_code)
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'cartesian' or 'geographic'. "\
@@ -122,13 +142,13 @@ class Grid:
             )
 
         # Element centre coordinates
-        self.xc = nodes2elems(self.x, self.triangles)
-        self.yc = nodes2elems(self.y, self.triangles)
-        self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, self.epsg_code)
+        self._xc = nodes2elems(self._x, self._triangles)
+        self._yc = nodes2elems(self._y, self._triangles)
+        self._lonc, self._latc = lonlat_from_utm(self._xc, self._yc, self.epsg_code)
 
         # Bathymetry at nodes and elements
-        self.h = mesh_data.x3
-        self.hc = nodes2elems(self.h, self.triangles)
+        self._h = mesh_data.x3
+        self._hc = nodes2elems(self._h, self._triangles)
 
         # Vertical grid
         # -------------
@@ -143,8 +163,8 @@ class Grid:
                 bdy_node_indices = np.asarray(bdy_nodes)
                 
                 # Extract sigma levels and layers for boundary nodes
-                bdy_sigma_levels = self.sigma_levels[bdy_node_indices, :]
-                bdy_sigma_layers = self.sigma_layers[bdy_node_indices, :]
+                bdy_sigma_levels = self._sigma_levels[bdy_node_indices, :]
+                bdy_sigma_layers = self._sigma_layers[bdy_node_indices, :]
  
                 # Create OpenBoundary object
                 open_boundary = OpenBoundary(
@@ -179,42 +199,133 @@ class Grid:
     @property
     def lon_nodes(self):
         """Get the longitude values at nodes."""
-        return self.lon
+        return self._lon
 
     @property
     def lat_nodes(self):
         """Get the latitude values at nodes."""
-        return self.lat
+        return self._lat
 
     @property
     def lon_elements(self):
         """Get the longitude values of element centroids."""
-        return self.lonc
+        return self._lonc
 
     @property
     def lat_elements(self):
         """Get the latitude values of element centroids."""
-        return self.latc
+        return self._latc
+
+    @property
+    def x_nodes(self):
+        """Get the Cartesian x-coordinates at nodes."""
+        return self._x
+
+    @property
+    def y_nodes(self):
+        """Get the Cartesian y-coordinates at nodes."""
+        return self._y
+
+    @property
+    def x_elements(self):
+        """Get the Cartesian x-coordinates of element centroids."""
+        return self._xc
+
+    @property
+    def y_elements(self):
+        """Get the Cartesian y-coordinates of element centroids."""
+        return self._yc
 
     @property
     def sigma_layers_nodes(self):
-        """Get the sigma layer values at nodes."""
-        return self.sigma_layers
+        """Get the sigma layer values at nodes (n_layers, n_nodes)."""
+        return self._sigma_layers.T
 
     @property
     def sigma_layers_elements(self):
-        """Get the sigma layer values at element centroids."""
-        return self.sigmac_layers
+        """Get the sigma layer values at element centroids (n_layers, n_elements)."""
+        return self._sigmac_layers.T
+
+    @property
+    def sigma_levels_nodes(self):
+        """Get the sigma level values at nodes (n_levels, n_nodes)."""
+        return self._sigma_levels.T
+
+    @property
+    def sigma_levels_elements(self):
+        """Get the sigma level values at element centroids (n_levels, n_elements)."""
+        return self._sigmac_levels.T
 
     @property
     def bathy_nodes(self):
         """Get the bathymetry values at nodes."""
-        return self.h
+        return self._h
 
     @property
     def bathy_elements(self):
         """Get the bathymetry values at element centroids."""
-        return self.hc
+        return self._hc
+
+
+    @property
+    def triangles(self):
+        """Get the triangle connectivity array (n_elements, 3), 0-indexed."""
+        return self._triangles
+
+    @property
+    def types_bdy(self):
+        """Get the boundary node types array."""
+        return self._types_bdy
+
+    @property
+    def nodes_bdy(self):
+        """Get the boundary node indices."""
+        return self._nodes_bdy
+
+    @property
+    def sigma_config(self):
+        """Get the sigma configuration."""
+        return self._sigma_config
+
+    @property
+    def sigma_levels(self):
+        """Get sigma level coordinates at nodes (n_nodes, n_levels)."""
+        return self._sigma_levels
+
+    @property
+    def sigma_layers(self):
+        """Get sigma layer coordinates at nodes (n_nodes, n_layers)."""
+        return self._sigma_layers
+
+    @property
+    def sigmac_levels(self):
+        """Get sigma level coordinates at element centroids (n_elements, n_levels)."""
+        return self._sigmac_levels
+
+    @property
+    def sigmac_layers(self):
+        """Get sigma layer coordinates at element centroids (n_elements, n_layers)."""
+        return self._sigmac_layers
+
+    @property
+    def z_layers_static(self):
+        """Get static z-coordinates at layer centres for nodes (n_nodes, n_layers)."""
+        return self._z_layers_static
+
+    @property
+    def zc_layers_static(self):
+        """Get static z-coordinates at layer centres for element centroids (n_elements, n_layers)."""
+        return self._zc_layers_static
+
+    @property
+    def z_levels_static(self):
+        """Get static z-coordinates at layer interfaces for nodes (n_nodes, n_levels)."""
+        return self._z_levels_static
+
+    @property
+    def zc_levels_static(self):
+        """Get static z-coordinates at layer interfaces for element centroids (n_elements, n_levels)."""
+        return self._zc_levels_static
 
     @property
     def n_open_boundaries(self):
@@ -227,20 +338,20 @@ class Grid:
         Args:
             sigma_data: Sigma data.
         """
-        self.sigma_config = sigma_data.sigma_config
-        self.sigma_levels = sigma_data.sigma_levels
+        self._sigma_config = sigma_data.sigma_config
+        self._sigma_levels = sigma_data.sigma_levels
 
         # Create a sigma layer variable (i.e. midpoint in the sigma levels).
-        self.sigma_layers = self.sigma_levels[:, 0:-1] + (
-            np.diff(self.sigma_levels, axis=1) / 2
+        self._sigma_layers = self._sigma_levels[:, 0:-1] + (
+            np.diff(self._sigma_levels, axis=1) / 2
         )
 
-        self._n_sigma_levels = self.sigma_levels.shape[1]
-        self._n_sigma_layers = self.sigma_layers.shape[1]
+        self._n_sigma_levels = self._sigma_levels.shape[1]
+        self._n_sigma_layers = self._sigma_layers.shape[1]
 
         # Create a sigma layer variable (i.e. midpoint in the sigma levels).
-        self.sigmac_levels = nodes2elems(self.sigma_levels.T, self.triangles).T
-        self.sigmac_layers = nodes2elems(self.sigma_layers.T, self.triangles).T
+        self._sigmac_levels = nodes2elems(self._sigma_levels.T, self._triangles).T
+        self._sigmac_layers = nodes2elems(self._sigma_layers.T, self._triangles).T
 
         # Compute static z coordinates for sigma levels and layers, which can be used
         # when interpolating data onto FVCOM's grid. We assume a value of zero for zeta
@@ -248,12 +359,12 @@ class Grid:
         # negative h values (indicating a position above the zero geoid, which is most-likely
         # intertidal) with a value of 1 m. When interpolating from coarse cmems data, for example,
         # this ensures we can fill data arrays with sensible values.
-        bathy_nodes_corrected = np.where(self.h < 0, 1.0, self.h)
-        bathy_elements_corrected = np.where(self.hc < 0, 1.0, self.hc)
-        self.z_layers_static = -bathy_nodes_corrected[:, np.newaxis] * self.sigma_layers
-        self.zc_layers_static = -bathy_elements_corrected[:, np.newaxis] * self.sigmac_layers
-        self.z_levels_static = -bathy_nodes_corrected[:, np.newaxis] * self.sigma_levels
-        self.zc_levels_static = -bathy_elements_corrected[:, np.newaxis] * self.sigmac_levels
+        bathy_nodes_corrected = np.where(self._h < 0, 1.0, self._h)
+        bathy_elements_corrected = np.where(self._hc < 0, 1.0, self._hc)
+        self._z_layers_static = bathy_nodes_corrected[:, np.newaxis] * self._sigma_layers
+        self._zc_layers_static = bathy_elements_corrected[:, np.newaxis] * self._sigmac_layers
+        self._z_levels_static = bathy_nodes_corrected[:, np.newaxis] * self._sigma_levels
+        self._zc_levels_static = bathy_elements_corrected[:, np.newaxis] * self._sigmac_levels
 
     def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: str,
                                       horizontal_coordinate_system: str = "geographic",
@@ -289,35 +400,35 @@ class Grid:
                 x1 = self.lon_nodes
                 x2 = self.lat_nodes
             else:  # cartesian
-                x1 = self.x
-                x2 = self.y
+                x1 = self._x
+                x2 = self._y
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
-                    x3 = self.z_levels_static.T
+                    x3 = self._z_levels_static.T
                 else:  # 'sigma'
-                    x3 = self.sigma_levels.T
+                    x3 = self._sigma_levels.T
             else:  # 'layer_centre'
                 if vertical_coordinate_system == 'z':
-                    x3 = self.z_layers_static.T
+                    x3 = self._z_layers_static.T
                 else:  # 'sigma'
-                    x3 = self.sigma_layers.T
+                    x3 = self._sigma_layers.T
         else:  # horizontal_position == 'element'
             if horizontal_coordinate_system == 'geographic':
                 x1 = self.lon_elements
                 x2 = self.lat_elements
             else:  # cartesian
-                x1 = self.xc
-                x2 = self.yc
+                x1 = self._xc
+                x2 = self._yc
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
-                    x3 = self.zc_levels_static.T
+                    x3 = self._zc_levels_static.T
                 else:  # 'sigma'
-                    x3 = self.sigmac_levels.T
+                    x3 = self._sigmac_levels.T
             else:  # 'layer_centre'
                 if vertical_coordinate_system == 'z':
-                    x3 = self.zc_layers_static.T
+                    x3 = self._zc_layers_static.T
                 else:  # 'sigma'
-                    x3 = self.sigmac_layers.T
+                    x3 = self._sigmac_layers.T
 
         # Use provided dates or empty array
         if dates is None:
@@ -335,16 +446,16 @@ class Grid:
         """
         import warnings
         if coordinate_system == 'geographic':
-            x, y = self.lon, self.lat
+            x, y = self._lon, self._lat
         elif coordinate_system == 'cartesian':
-            x, y = self.x, self.y
+            x, y = self._x, self._y
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'geographic' or 'cartesian'. "
                 f"Received '{coordinate_system}'."
             )
 
-        depth = self.h.copy()
+        depth = self._h.copy()
         if np.sum(depth < 0) > np.sum(depth > 0):
             depth = -depth
             warnings.warn('Flipping depths to be positive down since mostly negative depths were supplied.')
@@ -353,7 +464,7 @@ class Grid:
         with open(grid_file, 'w') as f:
             f.write('Node Number = {:d}\n'.format(self.n_nodes))
             f.write('Cell Number = {:d}\n'.format(self.n_elements))
-            for i, triangle in enumerate(self.triangles, 1):
+            for i, triangle in enumerate(self._triangles, 1):
                 f.write('{node:d} {:d} {:d} {:d} {node:d}\n'.format(node=i, *triangle + 1))
             for node in zip(nodes, x, y, depth):
                 f.write('{:d} {:.6f} {:.6f} {:.6f}\n'.format(*node))
@@ -373,9 +484,9 @@ class Grid:
                 either 'geographic' (lon/lat) or 'cartesian' (x/y).
         """
         if coordinate_system == 'geographic':
-            x, y = self.lon, self.lat
+            x, y = self._lon, self._lat
         elif coordinate_system == 'cartesian':
-            x, y = self.x, self.y
+            x, y = self._x, self._y
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'geographic' or 'cartesian'. "
@@ -384,7 +495,7 @@ class Grid:
 
         with open(coriolis_file, 'w') as f:
             f.write('Node Number = {:d}\n'.format(self.n_nodes))
-            for row in zip(x, y, self.lat):
+            for row in zip(x, y, self._lat):
                 f.write('{:.6f} {:.6f} {:.6f}\n'.format(*row))
 
     def write_obc(self, obc_file: str) -> None:
@@ -410,7 +521,7 @@ class Grid:
         Args:
             sigma_file: Path to the output sigma file.
         """
-        write_sigma_file(self.sigma_config, sigma_file)
+        write_sigma_file(self._sigma_config, sigma_file)
 
 
 def create_grid(grid_file: str, mesh_type: str, sigma_file: str, coordinate_system: str,
