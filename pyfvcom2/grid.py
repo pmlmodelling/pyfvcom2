@@ -20,12 +20,14 @@ class OpenBoundary:
         sigma_layers: Sigma layer coordinates for boundary nodes.
     """
     
-    def __init__(self, bdy_id: int, node_indices: np.ndarray, 
+    def __init__(self, bdy_id: int, node_indices: np.ndarray,
                  sigma_levels: np.ndarray, sigma_layers: np.ndarray):
         self._bdy_id = bdy_id
         self._node_indices = node_indices
         self._sigma_levels = sigma_levels
         self._sigma_layers = sigma_layers
+        self._sponge_radius: Optional[np.ndarray] = None
+        self._sponge_coefficient: Optional[np.ndarray] = None
 
     @property
     def bdy_id(self) -> int:
@@ -66,11 +68,53 @@ class OpenBoundary:
     @property
     def sigma_layers(self) -> np.ndarray:
         """Get sigma layers for boundary nodes.
-        
+
         Returns:
             Sigma layer coordinates for boundary nodes.
         """
         return self._sigma_layers
+
+    @property
+    def sponge_radius(self) -> Optional[np.ndarray]:
+        """Sponge layer radius at each boundary node (m), or None if not set."""
+        return self._sponge_radius
+
+    @property
+    def sponge_coefficient(self) -> Optional[np.ndarray]:
+        """Sponge layer coefficient at each boundary node, or None if not set."""
+        return self._sponge_coefficient
+
+    def set_sponge(self, radius: float | np.ndarray,
+                   coefficient: float | np.ndarray) -> None:
+        """Set the sponge layer parameters for all nodes on this boundary.
+
+        A scalar radius or coefficient is broadcast to every node on the
+        boundary. Per-node arrays must have length equal to ``nnodes``.
+
+        Args:
+            radius: Sponge layer radius in metres. A single float applies the
+                same value to every node; an array must match ``nnodes``.
+            coefficient: Sponge layer coefficient (dimensionless relaxation
+                strength). Same broadcasting rules as *radius*.
+
+        Raises:
+            PyFVCOM2ValueError: If an array argument does not match ``nnodes``.
+        """
+        n = self.nnodes
+        for name, val in (('radius', radius), ('coefficient', coefficient)):
+            if np.isscalar(val):
+                val = np.full(n, float(val))
+            else:
+                val = np.asarray(val, dtype=float)
+                if val.shape != (n,):
+                    raise PyFVCOM2ValueError(
+                        f"Sponge {name} array length {len(val)} does not match "
+                        f"the number of boundary nodes ({n})."
+                    )
+            if name == 'radius':
+                self._sponge_radius = val
+            else:
+                self._sponge_coefficient = val
 
 
 class Grid:
@@ -514,6 +558,36 @@ class Grid:
             f.write('OBC Node Number = {:d}\n'.format(len(ids)))
             for count, node, obc_type in zip(np.arange(len(ids)) + 1, ids, types):
                 f.write('{} {:d} {:d}\n'.format(count, int(node) + 1, int(obc_type)))
+
+    def write_sponge(self, sponge_file: str) -> None:
+        """Write sponge layer parameters to an FVCOM-formatted ASCII file.
+
+        Collects sponge radius and coefficient values from every open boundary
+        and writes the ``Sponge Node Number`` ASCII file consumed by FVCOM's
+        ``SPONGE_FILE`` namelist entry.
+
+        Args:
+            sponge_file: Path to the output sponge file.
+
+        Raises:
+            PyFVCOM2ValueError: If any open boundary has not had
+                :meth:`OpenBoundary.set_sponge` called.
+        """
+        nodes, radii, coefficients = [], [], []
+        for boundary in self.open_boundaries:
+            if boundary.sponge_radius is None or boundary.sponge_coefficient is None:
+                raise PyFVCOM2ValueError(
+                    f"Open boundary {boundary.bdy_id} has no sponge layer set. "
+                    "Call boundary.set_sponge(radius, coefficient) first."
+                )
+            nodes.extend(boundary.node_indices.tolist())
+            radii.extend(boundary.sponge_radius.tolist())
+            coefficients.extend(boundary.sponge_coefficient.tolist())
+
+        with open(sponge_file, 'w') as f:
+            f.write('Sponge Node Number = {:d}\n'.format(len(nodes)))
+            for node, r, c in zip(nodes, radii, coefficients):
+                f.write('{:d} {:.6f} {:.6f}\n'.format(int(node) + 1, r, c))
 
     def write_sigma(self, sigma_file: str) -> None:
         """Write the sigma coordinate configuration to an FVCOM-formatted ASCII file.
