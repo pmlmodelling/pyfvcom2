@@ -295,16 +295,16 @@ class FVCOMPlotter(PyFVCOM2Plotter):
         
         # Coordinates - Grid object always has both geographic and cartesian
         if self.geographic_coords:
-            self.x = grid.lon
-            self.y = grid.lat
-            self.xc = grid.lonc
-            self.yc = grid.latc
+            self.x = grid.lon_nodes
+            self.y = grid.lat_nodes
+            self.xc = grid.lon_elements
+            self.yc = grid.lat_elements
             self.transform = ccrs.PlateCarree()
         else:
-            self.x = grid.x
-            self.y = grid.y
-            self.xc = grid.xc
-            self.yc = grid.yc
+            self.x = grid.x_nodes
+            self.y = grid.y_nodes
+            self.xc = grid.x_elements
+            self.yc = grid.y_elements
             self.transform = None
 
         # Triangles for matplotlib
