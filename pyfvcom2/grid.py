@@ -250,10 +250,10 @@ class Grid:
         # this ensures we can fill data arrays with sensible values.
         bathy_nodes_corrected = np.where(self.h < 0, 1.0, self.h)
         bathy_elements_corrected = np.where(self.hc < 0, 1.0, self.hc)
-        self.z_layers_static = -bathy_nodes_corrected[:, np.newaxis] * self.sigma_layers
-        self.zc_layers_static = -bathy_elements_corrected[:, np.newaxis] * self.sigmac_layers
-        self.z_levels_static = -bathy_nodes_corrected[:, np.newaxis] * self.sigma_levels
-        self.zc_levels_static = -bathy_elements_corrected[:, np.newaxis] * self.sigmac_levels
+        self.z_layers_static = bathy_nodes_corrected[:, np.newaxis] * self.sigma_layers
+        self.zc_layers_static = bathy_elements_corrected[:, np.newaxis] * self.sigmac_layers
+        self.z_levels_static = bathy_nodes_corrected[:, np.newaxis] * self.sigma_levels
+        self.zc_levels_static = bathy_elements_corrected[:, np.newaxis] * self.sigmac_levels
 
     def get_interpolation_coordinates(self, horizontal_position: str, vertical_position: str,
                                       horizontal_coordinate_system: str = "geographic",
