@@ -170,42 +170,42 @@ class FVCOMReader:
     @property
     def lon_nodes(self):
         """Get the longitude values from the dataset."""
-        return self.grid.lon
+        return self.grid.lon_nodes
 
     @property
     def lat_nodes(self):
         """Get the latitude values from the dataset."""
-        return self.grid.lat
+        return self.grid.lat_nodes
 
     @property
     def lon_elements(self):
         """Get the longitude values of element centroids."""
-        return self.grid.lonc
+        return self.grid.lon_elements
 
     @property
     def lat_elements(self):
         """Get the latitude values of element centroids."""
-        return self.grid.latc
+        return self.grid.lat_elements
 
     @property
     def x_nodes(self):
         """Get the Cartesian x-coordinates at nodes."""
-        return self.grid.x
+        return self.grid.x_nodes
 
     @property
     def y_nodes(self):
         """Get the Cartesian y-coordinates at nodes."""
-        return self.grid.y
+        return self.grid.y_nodes
 
     @property
     def x_elements(self):
         """Get the Cartesian x-coordinates of element centroids."""
-        return self.grid.xc
+        return self.grid.x_elements
 
     @property
     def y_elements(self):
         """Get the Cartesian y-coordinates of element centroids."""
-        return self.grid.yc
+        return self.grid.y_elements
 
     @property
     def sigma_layers_nodes(self):

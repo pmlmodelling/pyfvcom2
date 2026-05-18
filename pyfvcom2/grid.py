@@ -107,14 +107,14 @@ class Grid:
         self._n_elements = mesh_data.triangle.shape[0]
 
         if coordinate_system == "cartesian":
-            self.x = mesh_data.x1
-            self.y = mesh_data.x2
+            self._x = mesh_data.x1
+            self._y = mesh_data.x2
             self.epsg_code = epsg_code
-            self.lon, self.lat = lonlat_from_utm(self.x, self.y, epsg_code)
+            self._lon, self._lat = lonlat_from_utm(self._x, self._y, epsg_code)
         elif coordinate_system == "geographic":
-            self.lon = mesh_data.x1
-            self.lat = mesh_data.x2
-            self.x, self.y, self.epsg_code = utm_from_lonlat(self.lon, self.lat, epsg_code)
+            self._lon = mesh_data.x1
+            self._lat = mesh_data.x2
+            self._x, self._y, self.epsg_code = utm_from_lonlat(self._lon, self._lat, epsg_code)
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'cartesian' or 'geographic'. "\
@@ -122,13 +122,13 @@ class Grid:
             )
 
         # Element centre coordinates
-        self.xc = nodes2elems(self.x, self.triangles)
-        self.yc = nodes2elems(self.y, self.triangles)
-        self.lonc, self.latc = lonlat_from_utm(self.xc, self.yc, self.epsg_code)
+        self._xc = nodes2elems(self._x, self.triangles)
+        self._yc = nodes2elems(self._y, self.triangles)
+        self._lonc, self._latc = lonlat_from_utm(self._xc, self._yc, self.epsg_code)
 
         # Bathymetry at nodes and elements
-        self.h = mesh_data.x3
-        self.hc = nodes2elems(self.h, self.triangles)
+        self._h = mesh_data.x3
+        self._hc = nodes2elems(self._h, self.triangles)
 
         # Vertical grid
         # -------------
@@ -179,42 +179,42 @@ class Grid:
     @property
     def lon_nodes(self):
         """Get the longitude values at nodes."""
-        return self.lon
+        return self._lon
 
     @property
     def lat_nodes(self):
         """Get the latitude values at nodes."""
-        return self.lat
+        return self._lat
 
     @property
     def lon_elements(self):
         """Get the longitude values of element centroids."""
-        return self.lonc
+        return self._lonc
 
     @property
     def lat_elements(self):
         """Get the latitude values of element centroids."""
-        return self.latc
+        return self._latc
 
     @property
     def x_nodes(self):
         """Get the Cartesian x-coordinates at nodes."""
-        return self.x
+        return self._x
 
     @property
     def y_nodes(self):
         """Get the Cartesian y-coordinates at nodes."""
-        return self.y
+        return self._y
 
     @property
     def x_elements(self):
         """Get the Cartesian x-coordinates of element centroids."""
-        return self.xc
+        return self._xc
 
     @property
     def y_elements(self):
         """Get the Cartesian y-coordinates of element centroids."""
-        return self.yc
+        return self._yc
 
     @property
     def sigma_layers_nodes(self):
@@ -239,12 +239,12 @@ class Grid:
     @property
     def bathy_nodes(self):
         """Get the bathymetry values at nodes."""
-        return self.h
+        return self._h
 
     @property
     def bathy_elements(self):
         """Get the bathymetry values at element centroids."""
-        return self.hc
+        return self._hc
 
     @property
     def n_open_boundaries(self):
@@ -278,8 +278,8 @@ class Grid:
         # negative h values (indicating a position above the zero geoid, which is most-likely
         # intertidal) with a value of 1 m. When interpolating from coarse cmems data, for example,
         # this ensures we can fill data arrays with sensible values.
-        bathy_nodes_corrected = np.where(self.h < 0, 1.0, self.h)
-        bathy_elements_corrected = np.where(self.hc < 0, 1.0, self.hc)
+        bathy_nodes_corrected = np.where(self._h < 0, 1.0, self._h)
+        bathy_elements_corrected = np.where(self._hc < 0, 1.0, self._hc)
         self.z_layers_static = bathy_nodes_corrected[:, np.newaxis] * self.sigma_layers
         self.zc_layers_static = bathy_elements_corrected[:, np.newaxis] * self.sigmac_layers
         self.z_levels_static = bathy_nodes_corrected[:, np.newaxis] * self.sigma_levels
@@ -319,8 +319,8 @@ class Grid:
                 x1 = self.lon_nodes
                 x2 = self.lat_nodes
             else:  # cartesian
-                x1 = self.x
-                x2 = self.y
+                x1 = self._x
+                x2 = self._y
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
                     x3 = self.z_levels_static.T
@@ -336,8 +336,8 @@ class Grid:
                 x1 = self.lon_elements
                 x2 = self.lat_elements
             else:  # cartesian
-                x1 = self.xc
-                x2 = self.yc
+                x1 = self._xc
+                x2 = self._yc
             if vertical_position == 'layer_interface':
                 if vertical_coordinate_system == 'z':
                     x3 = self.zc_levels_static.T
@@ -365,16 +365,16 @@ class Grid:
         """
         import warnings
         if coordinate_system == 'geographic':
-            x, y = self.lon, self.lat
+            x, y = self._lon, self._lat
         elif coordinate_system == 'cartesian':
-            x, y = self.x, self.y
+            x, y = self._x, self._y
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'geographic' or 'cartesian'. "
                 f"Received '{coordinate_system}'."
             )
 
-        depth = self.h.copy()
+        depth = self._h.copy()
         if np.sum(depth < 0) > np.sum(depth > 0):
             depth = -depth
             warnings.warn('Flipping depths to be positive down since mostly negative depths were supplied.')
@@ -403,9 +403,9 @@ class Grid:
                 either 'geographic' (lon/lat) or 'cartesian' (x/y).
         """
         if coordinate_system == 'geographic':
-            x, y = self.lon, self.lat
+            x, y = self._lon, self._lat
         elif coordinate_system == 'cartesian':
-            x, y = self.x, self.y
+            x, y = self._x, self._y
         else:
             raise PyFVCOM2ValueError(
                 "coordinate_system must be either 'geographic' or 'cartesian'. "
@@ -414,7 +414,7 @@ class Grid:
 
         with open(coriolis_file, 'w') as f:
             f.write('Node Number = {:d}\n'.format(self.n_nodes))
-            for row in zip(x, y, self.lat):
+            for row in zip(x, y, self._lat):
                 f.write('{:.6f} {:.6f} {:.6f}\n'.format(*row))
 
     def write_obc(self, obc_file: str) -> None:
