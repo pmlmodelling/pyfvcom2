@@ -210,22 +210,22 @@ class FVCOMReader:
     @property
     def sigma_layers_nodes(self):
         """Get the sigma layer values at nodes (n_layers, n_nodes)."""
-        return self.grid.sigma_layers.T
+        return self.grid.sigma_layers_nodes
 
     @property
     def sigma_layers_elements(self):
         """Get the sigma layer values at element centroids (n_layers, n_elements)."""
-        return self.grid.sigmac_layers.T
+        return self.grid.sigma_layers_elements
 
     @property
     def sigma_levels_nodes(self):
         """Get the sigma level values at nodes (n_levels, n_nodes)."""
-        return self.grid.sigma_levels.T
+        return self.grid.sigma_levels_nodes
     
     @property
     def sigma_levels_elements(self):
         """Get the sigma level values at element centroids (n_levels, n_elements)."""
-        return self.grid.sigmac_levels.T
+        return self.grid.sigma_levels_elements
 
     @property
     def bathy_nodes(self):
@@ -341,14 +341,14 @@ class FVCOMReader:
 
         if var_is_node_based:
             if vertical_position == 'layer_centre':
-                return self.grid.sigma_layers.T
+                return self.grid.sigma_layers_nodes
             else:
-                return self.grid.sigma_levels.T
+                return self.grid.sigma_levels_nodes
         else:
             if vertical_position == 'layer_centre':
-                return self.grid.sigmac_layers.T
+                return self.grid.sigma_layers_elements
             else:
-                return self.grid.sigmac_levels.T
+                return self.grid.sigma_levels_elements
 
     def get_time_dep_z_levels(self, var_name: str, target_datetime: datetime=None,
                               tolerance: Optional[timedelta]=None, zeta_var_name: str='zeta',
