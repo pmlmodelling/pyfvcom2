@@ -6,6 +6,7 @@ from .sigma import SigmaConfig, SigmaData, process_sigma_config, read_sigma_file
 from .coordinates import lonlat_from_utm, utm_from_lonlat, sigma_to_z_coords
 from .exceptions import PyFVCOM2ValueError
 from .interpolation_coordinates import InterpolationCoordinates
+from .fvcom_writer import FVCOMWriter
 
 __all__ = ["OpenBoundary", "Grid", "connectivity", "nodes2elems", "find_connected_elements"]
 
@@ -197,6 +198,11 @@ class Grid:
         # Vertical grid
         # -------------
         self._add_sigma_coordinates(sigma_data)
+
+        # Bed roughness
+        # -------------
+        self._z0b: Optional[np.ndarray] = None
+        self._cbcmin: Optional[np.ndarray] = None
 
         # Open boundaries
         # ---------------
@@ -588,6 +594,74 @@ class Grid:
             f.write('Sponge Node Number = {:d}\n'.format(len(nodes)))
             for node, r, c in zip(nodes, radii, coefficients):
                 f.write('{:d} {:.6f} {:.6f}\n'.format(int(node) + 1, r, c))
+
+    def set_bed_roughness(self, z0b: float | np.ndarray, cbcmin: Optional[float | np.ndarray] = None) -> None:
+        """Set the bed roughness parameters for the grid.
+
+        Args:
+            z0b: Bottom roughness in metres. A scalar is broadcast to all
+                elements; an array must have length ``n_elements``.
+            cbcmin: Minimum bottom drag coefficient (dimensionless), optional.
+                Same broadcast/validation rules as ``z0b``. If not supplied,
+                ``cbcmin`` is not written by :meth:`write_bed_roughness`.
+
+        Raises:
+            PyFVCOM2ValueError: If an array argument has the wrong length.
+        """
+        def _to_element_array(value, name):
+            arr = np.asarray(value, dtype=float)
+            if arr.ndim == 0:
+                return np.full(self._n_elements, arr.item())
+            if arr.shape != (self._n_elements,):
+                raise PyFVCOM2ValueError(
+                    f"'{name}' must be a scalar or an array of length n_elements "
+                    f"({self._n_elements}); got shape {arr.shape}."
+                )
+            return arr
+
+        self._z0b = _to_element_array(z0b, 'z0b')
+        self._cbcmin = _to_element_array(cbcmin, 'cbcmin') if cbcmin is not None else None
+
+    def write_bed_roughness(self, roughness_file: str) -> None:
+        """Write the bed roughness to a NetCDF4 file.
+
+        Writes the ``z0b`` variable (bottom roughness in metres, dimensioned
+        ``nele``) and, if :meth:`set_bed_roughness` was called with a
+        ``cbcmin`` value, a ``cbcmin`` variable (minimum drag coefficient,
+        dimensionless).
+
+        The output file is consumed by FVCOM via the ``BEDFRICFILE`` namelist
+        entry.
+
+        Args:
+            roughness_file: Path to the output NetCDF file.
+
+        Raises:
+            PyFVCOM2ValueError: If :meth:`set_bed_roughness` has not been
+                called.
+        """
+        if self._z0b is None:
+            raise PyFVCOM2ValueError(
+                "No bed roughness set. Call set_bed_roughness(z0b) first."
+            )
+
+        dims = {'nele': self._n_elements}
+        global_attrs = {'title': 'bottom roughness'}
+        ncopts = {'zlib': True, 'complevel': 7}
+
+        with FVCOMWriter(roughness_file, dims, global_attributes=global_attrs,
+                         format='NETCDF4') as writer:
+            writer.add_variable(
+                'z0b', self._z0b, ['nele'],
+                attributes={'long_name': 'bottom roughness', 'units': 'm'},
+                ncopts=ncopts,
+            )
+            if self._cbcmin is not None:
+                writer.add_variable(
+                    'cbcmin', self._cbcmin, ['nele'],
+                    attributes={'long_name': 'bottom roughness minimum', 'units': '1'},
+                    ncopts=ncopts,
+                )
 
     def write_sigma(self, sigma_file: str) -> None:
         """Write the sigma coordinate configuration to an FVCOM-formatted ASCII file.
