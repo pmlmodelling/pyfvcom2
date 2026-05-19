@@ -95,6 +95,13 @@ from .obc import OBCManager
 # Import namelist manager
 from .namelist import NamelistManager
 
+# Import bathymetry smoothers
+from .bathy_smoother import (
+    BathymetrySmoother,
+    GlobalBathymetrySmoother,
+    LocalBathymetrySmoother,
+)
+
 # Import weights calculator
 from .weights_calculator import (
     get_weights_calculator,
@@ -193,6 +200,10 @@ __all__ = [
     "GridBand",
     # Namelist
     "NamelistManager",
+    # Bathymetry smoothers
+    "BathymetrySmoother",
+    "GlobalBathymetrySmoother",
+    "LocalBathymetrySmoother",
     # Weights calculator
     "WeightsCalculator",
     "get_weights_calculator",
