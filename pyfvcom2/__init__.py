@@ -92,6 +92,9 @@ from .nest import (
 # Import OBC forcing functionality
 from .obc import OBCManager
 
+# Import namelist manager
+from .namelist import NamelistManager
+
 # Import weights calculator
 from .weights_calculator import (
     get_weights_calculator,
@@ -188,6 +191,8 @@ __all__ = [
     "NestManager",
     "Nest",
     "GridBand",
+    # Namelist
+    "NamelistManager",
     # Weights calculator
     "WeightsCalculator",
     "get_weights_calculator",
