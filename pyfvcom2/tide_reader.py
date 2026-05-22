@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import xarray as xr
 import numpy as np
 from typing import NamedTuple, Optional, List, Tuple, Dict, Union
