@@ -99,7 +99,6 @@ from .namelist import NamelistManager
 from .bathy_smoother import (
     BathymetrySmoother,
     GlobalBathymetrySmoother,
-    LocalBathymetrySmoother,
 )
 
 # Import weights calculator
@@ -203,7 +202,6 @@ __all__ = [
     # Bathymetry smoothers
     "BathymetrySmoother",
     "GlobalBathymetrySmoother",
-    "LocalBathymetrySmoother",
     # Weights calculator
     "WeightsCalculator",
     "get_weights_calculator",
