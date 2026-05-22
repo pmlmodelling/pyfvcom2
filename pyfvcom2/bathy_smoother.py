@@ -15,7 +15,6 @@ if TYPE_CHECKING:
 __all__ = [
     "BathymetrySmoother",
     "GlobalBathymetrySmoother",
-    "LocalBathymetrySmoother",
 ]
 
 
@@ -23,8 +22,11 @@ __all__ = [
 # Shared utility
 # ---------------------------------------------------------------------------
 
-def _edge_r_factors(h_nodes: np.ndarray, triangles: np.ndarray) -> np.ndarray:
-    """Compute the Haney r-factor for every inter-element edge in the mesh.
+def _edge_r_factors(
+    h_nodes: np.ndarray,
+    triangles: np.ndarray,
+) -> np.ndarray:
+    """Compute the Haney r-factor for every inter-element edge.
 
     The r-factor for an edge shared by two adjacent elements is:
 
@@ -32,18 +34,33 @@ def _edge_r_factors(h_nodes: np.ndarray, triangles: np.ndarray) -> np.ndarray:
 
         r = \\frac{|h_i - h_j|}{h_i + h_j}
 
-    where :math:`h_i` and :math:`h_j` are the mean node depths of the two
-    elements sharing that edge.
+    where :math:`h_i` and :math:`h_j` are element-mean depths.
+
+    Edges where either adjacent element has a mean depth at or below the datum
+    (i.e. intertidal or exposed elements) are **masked** and returned as
+    :data:`numpy.nan`.  The Haney criterion is a measure of the sigma-layer
+    pressure-gradient error: it is only meaningful for fully-submerged elements
+    where the sigma layers span a positive water column.  FVCOM handles
+    wetting/drying through a separate momentum cut-off, so including intertidal
+    edges would produce physically meaningless and numerically singular r values.
+
+    The returned array has the same length as the number of unique shared edges
+    (i.e. one entry per pair of adjacent elements), so it can be indexed
+    directly against any parallel per-edge array (e.g. edge midpoint
+    coordinates) that is built with the same iteration order.
 
     Args:
-        h_nodes: Node depths, shape ``(n_nodes,)``.
+        h_nodes: Node depths, shape ``(n_nodes,)``.  May contain negative
+            values (intertidal / above-water nodes).
         triangles: Element connectivity (0-indexed), shape ``(n_elements, 3)``.
 
     Returns:
         r-factor for each unique inter-element edge, shape ``(n_edges,)``.
+        Entries for edges adjacent to at least one intertidal element are
+        :data:`numpy.nan`.
     """
-    # Element-mean depths
     h_elems = h_nodes[triangles].mean(axis=1)
+    wet = h_elems > 0  # element is fully submerged at mean depth
 
     # Build shared-edge pairs: each triangle has 3 edges; collect adjacent
     # element pairs by finding triangles that share two nodes.
@@ -63,13 +80,14 @@ def _edge_r_factors(h_nodes: np.ndarray, triangles: np.ndarray) -> np.ndarray:
         return np.empty(0)
 
     pairs_arr = np.array(pairs, dtype=np.intp)
-    hi = h_elems[pairs_arr[:, 0]]
-    hj = h_elems[pairs_arr[:, 1]]
-    denom = hi + hj
-    # Guard against zero-depth sums (should not occur in valid meshes)
-    safe = denom > 0
-    r = np.zeros(len(pairs_arr))
-    r[safe] = np.abs(hi[safe] - hj[safe]) / denom[safe]
+    ei0, ei1 = pairs_arr[:, 0], pairs_arr[:, 1]
+    both_wet = wet[ei0] & wet[ei1]
+
+    r = np.full(len(pairs_arr), np.nan)
+    hi = h_elems[ei0[both_wet]]
+    hj = h_elems[ei1[both_wet]]
+    # Both hi and hj are > 0 by construction, so denominator is always positive.
+    r[both_wet] = np.abs(hi - hj) / (hi + hj)
     return r
 
 
@@ -107,13 +125,20 @@ class BathymetrySmoother(ABC):
     def r_factor(self, grid: Grid) -> np.ndarray:
         """Return the Haney r-factor for every inter-element edge.
 
+        Edges adjacent to at least one intertidal element (element-mean depth
+        ≤ 0) are returned as :data:`numpy.nan` and excluded from the
+        assessment.  Use :func:`numpy.nanmax` / :func:`numpy.nanmean` to
+        compute statistics, and note that ``r > threshold`` comparisons
+        naturally treat NaN as ``False``.
+
         Args:
             grid: :class:`~pyfvcom2.grid.Grid` instance to evaluate.
 
         Returns:
             Array of r-factor values, one per shared edge.  Values near zero
-            indicate a smooth transition; values approaching 1 indicate a step
-            change.  A commonly used threshold is :math:`r < 0.2`.
+            indicate a smooth transition; values near 1 indicate a near-step
+            change.  Intertidal edges are :data:`numpy.nan`.  A commonly used
+            threshold is :math:`r < 0.2`.
         """
         return _edge_r_factors(grid.bathy_nodes, grid.triangles)
 
@@ -181,121 +206,3 @@ class GlobalBathymetrySmoother(BathymetrySmoother):
         grid._h = h
         grid._hc = h[grid.triangles].mean(axis=1)
 
-
-# ---------------------------------------------------------------------------
-# Local (targeted) smoother
-# ---------------------------------------------------------------------------
-
-class LocalBathymetrySmoother(BathymetrySmoother):
-    """Targeted r-factor-driven bathymetry smoother.
-
-    Rather than smoothing the entire mesh, this smoother identifies only the
-    nodes that touch edges violating the Haney criterion and applies a
-    weighted-average update to those nodes.  The process repeats until all
-    edges satisfy :math:`r \\leq r_{max}` or ``max_iter`` iterations are
-    reached.
-
-    At each iteration:
-
-    1. Compute the r-factor for every inter-element edge.
-    2. Collect the set of nodes that belong to any non-compliant edge.
-    3. For each such node, replace its depth with the mean depth of all
-       nodes it is directly connected to (i.e. one graph-Laplacian step,
-       applied only where needed).
-    4. Recompute element-centroid depths from the updated node depths.
-
-    This is the minimum smoothing necessary to satisfy the r-factor criterion
-    and leaves unaffected regions of the mesh untouched.
-
-    Args:
-        r_max: Maximum permitted Haney r-factor. Edges exceeding this value
-            are targeted for smoothing. Defaults to ``0.2``, the commonly
-            used threshold for sigma-coordinate ocean models.
-        max_iter: Maximum number of smoothing iterations before giving up.
-            A :class:`~pyfvcom2.exceptions.PyFVCOM2ValueError` is raised if
-            convergence is not achieved. Defaults to ``100``.
-    """
-
-    def __init__(self, r_max: float = 0.2, max_iter: int = 100) -> None:
-        if r_max <= 0:
-            raise PyFVCOM2ValueError("'r_max' must be positive.")
-        if max_iter < 1:
-            raise PyFVCOM2ValueError("'max_iter' must be >= 1.")
-        self._r_max = r_max
-        self._max_iter = max_iter
-
-    def smooth(self, grid: Grid) -> None:
-        """Apply targeted r-factor smoothing to *grid* in-place.
-
-        Args:
-            grid: :class:`~pyfvcom2.grid.Grid` instance to modify.
-
-        Raises:
-            PyFVCOM2ValueError: If the mesh does not converge to
-                :math:`r \\leq r_{max}` within ``max_iter`` iterations.
-        """
-        triangles = grid.triangles
-        h = grid.bathy_nodes.copy()
-
-        # Pre-build node → neighbouring nodes lookup (shared-edge adjacency)
-        node_neighbours: dict[int, set[int]] = {i: set() for i in range(grid.n_nodes)}
-        for tri in triangles:
-            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-                node_neighbours[int(a)].add(int(b))
-                node_neighbours[int(b)].add(int(a))
-
-        # Pre-build edge list with the two node indices for each shared edge
-        # so we can identify which nodes to update.
-        edge_to_elem: dict[frozenset, int] = {}
-        edge_nodes: list[tuple[int, int]] = []
-        edge_elem_pairs: list[tuple[int, int]] = []
-
-        for ei, tri in enumerate(triangles):
-            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
-                key = frozenset((int(a), int(b)))
-                if key in edge_to_elem:
-                    edge_nodes.append((int(a), int(b)))
-                    edge_elem_pairs.append((edge_to_elem[key], ei))
-                else:
-                    edge_to_elem[key] = ei
-
-        edge_nodes_arr = np.array(edge_nodes, dtype=np.intp)
-        edge_elem_pairs_arr = np.array(edge_elem_pairs, dtype=np.intp)
-
-        for iteration in range(self._max_iter):
-            h_elems = h[triangles].mean(axis=1)
-
-            hi = h_elems[edge_elem_pairs_arr[:, 0]]
-            hj = h_elems[edge_elem_pairs_arr[:, 1]]
-            denom = hi + hj
-            r = np.zeros(len(edge_elem_pairs_arr))
-            safe = denom > 0
-            r[safe] = np.abs(hi[safe] - hj[safe]) / denom[safe]
-
-            bad_edges = np.where(r > self._r_max)[0]
-            if len(bad_edges) == 0:
-                break
-
-            # Collect unique nodes on non-compliant edges
-            bad_nodes = np.unique(edge_nodes_arr[bad_edges].ravel())
-
-            # Laplacian update: replace each bad node's depth with the mean
-            # of its direct neighbours' current depths.
-            h_new = h.copy()
-            for node in bad_nodes:
-                neighbours = node_neighbours[node]
-                if neighbours:
-                    h_new[node] = np.mean(h[list(neighbours)])
-
-            h = h_new
-        else:
-            max_r = r.max() if len(r) else 0.0
-            raise PyFVCOM2ValueError(
-                f"Bathymetry smoothing did not converge after {self._max_iter} "
-                f"iterations. Maximum r-factor remaining: {max_r:.4f} "
-                f"(target: {self._r_max:.4f}). "
-                "Try increasing max_iter or r_max."
-            )
-
-        grid._h = h
-        grid._hc = h[triangles].mean(axis=1)
