@@ -142,9 +142,9 @@ class FVCOMReader:
             Grid: The grid object containing mesh structure and open boundaries.
         """
         if self._grid is None:
-            mesh_data = self._extract_mesh_data()
+            mesh_data, coordinate_system = self._extract_mesh_data()
             sigma_data = self._extract_sigma_data()
-            self._grid = Grid(mesh_data, sigma_data, "geographic")
+            self._grid = Grid(mesh_data, sigma_data, coordinate_system[0], epsg_code=coordinate_system[1])
         return self._grid
 
     @property
@@ -459,14 +459,22 @@ class FVCOMReader:
         # Extract basic mesh components
         nodes = np.arange(1, self._metadata_dataset.dimensions['node'].size+1) # TBC zero based indexing kept here.
         triangles = self._metadata_dataset.variables['nv'][:].T - 1  # Convert to 0-based indexing, transpose to (n_elem, 3)
-        x1 = self._metadata_dataset.variables['lon'][:]
-        x2 = self._metadata_dataset.variables['lat'][:]
-        x3 = self._return_grid_variable_data('h')[:]
+        
+        if getattr(self._metadata_dataset, 'CoordinateSystem', None) == 'Cartesian':
+            x1 = self._metadata_dataset.variables['x'][:]
+            x2 = self._metadata_dataset.variables['y'][:]
+            # This assumes the coordinate projection is filled in and is either EPSG:xxxxx or just xxxxxx
+            coordinate_system = ['cartesian', self._metadata_dataset.CoordinateProjection.split(":")[-1]]
+        else:
+            x1 = self._metadata_dataset.variables['lon'][:]
+            x2 = self._metadata_dataset.variables['lat'][:]
+            coordinate_system = ['geographic', None]
 
+        x3 = self._return_grid_variable_data('h')[:]
         open_bdy_node_lists = None
         bdy_types = None
 
-        return MeshData(triangles, nodes, x1, x2, x3, bdy_types, open_bdy_node_lists)
+        return MeshData(triangles, nodes, x1, x2, x3, bdy_types, open_bdy_node_lists), coordinate_system
     
     def _extract_sigma_data(self) -> SigmaData:
         """Extract sigma coordinate data from FVCOM output file.
