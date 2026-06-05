@@ -464,7 +464,11 @@ class FVCOMReader:
             x1 = self._metadata_dataset.variables['x'][:]
             x2 = self._metadata_dataset.variables['y'][:]
             # This assumes the coordinate projection is filled in and is either EPSG:xxxxx or just xxxxxx
-            coordinate_system = ['cartesian', self._metadata_dataset.CoordinateProjection.split(":")[-1]]
+            try:
+                coordinate_system = ['cartesian', self._metadata_dataset.CoordinateProjection.split(":")[-1]]
+            except AttributeError:
+                raise PyFVCOM2ValueError(f"Cartesian coordinates specificed but no CoordinateProjection global attribute provided")
+                
         else:
             x1 = self._metadata_dataset.variables['lon'][:]
             x2 = self._metadata_dataset.variables['lat'][:]
