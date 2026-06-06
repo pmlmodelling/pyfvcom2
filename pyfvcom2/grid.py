@@ -176,7 +176,10 @@ class Grid:
         if coordinate_system == "cartesian":
             self._x = mesh_data.x1
             self._y = mesh_data.x2
-            self.epsg_code = epsg_code
+            if epsg_code is not None:
+                self.epsg_code = epsg_code
+            else:
+                raise PyFVCOM2ValueError("epsg code must be provided for cartesian coordinates")
             self._lon, self._lat = lonlat_from_utm(self._x, self._y, epsg_code)
         elif coordinate_system == "geographic":
             self._lon = mesh_data.x1
