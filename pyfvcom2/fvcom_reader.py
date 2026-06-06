@@ -7,6 +7,7 @@ import numpy as np
 from netCDF4 import Dataset
 from typing import Union, List, Optional
 from cftime import num2pydate
+from collections import defaultdict
 
 from .interpolation_coordinates import InterpolationCoordinates
 from .coordinates import sigma_to_z_coords
@@ -15,7 +16,6 @@ from .mesh_reader import MeshData
 from .sigma import SigmaData
 from .date_utils import round_time
 from .exceptions import PyFVCOM2ValueError
-
 
 class FVCOMReader:
     """A class to read FVCOM model output and restart files.
@@ -463,8 +463,13 @@ class FVCOMReader:
         x2 = self._metadata_dataset.variables['lat'][:]
         x3 = self._return_grid_variable_data('h')[:]
 
-        open_bdy_node_lists = None
-        bdy_types = None
+        if 'obc_nodes' in self._metadata_dataset.variables:
+            # Just a list of all nodes in restart output, so need to parse to seperate open boundaries
+            open_bdy_node_lists, bdy_types = connected_nodes_list(self._metadata_dataset.variables['obc_nodes'][:] - 1, triangles,
+                                                    obc_types=self._metadata_dataset.variables['obc_type'][:])
+        else:
+            open_bdy_node_lists = None
+            bdy_types = None
 
         return MeshData(triangles, nodes, x1, x2, x3, bdy_types, open_bdy_node_lists)
     
@@ -503,3 +508,103 @@ class FVCOMReader:
                 "Masked values will be filled with default fill value."
             )
         return np.ma.getdata(self._metadata_dataset.variables[var_name][:])
+
+def connected_nodes_list(obc_nodes, triangulation, obc_types=None):
+    """
+    Split obc_nodes into separate connected sequences using mesh connectivity.
+    obc_nodes does not have to be ordered
+    
+    Parameters
+    ----------
+    obc_nodes : array-like (k,)       Node indices
+    obc_types : array-like (k,)       Corresponding type for each node
+    triangulation : array-like (j, 3) Triangular mesh connectivity
+    
+    Returns
+    -------
+    node_sequences : list of np.ndarray   Each array is a connected sequence
+    type_sequences : list of np.ndarray   Corresponding types for each sequence
+    """
+    obc_nodes = np.asarray(obc_nodes)
+    obc_types = np.asarray(obc_types)
+    triangulation = np.asarray(triangulation)
+    obc_set = set(obc_nodes)
+
+    # Build adjacency graph of obc_nodes using mesh edges
+    adjacency = defaultdict(set)
+    for tri in triangulation:
+        for i, j in [(0,1), (1,2), (0,2)]:
+            a, b = tri[i], tri[j]
+            if a in obc_set and b in obc_set:
+                adjacency[a].add(b)
+                adjacency[b].add(a)
+
+    # Walk each connected component using BFS
+    visited = set()
+    components = []
+
+    for start_node in obc_nodes:
+        if start_node in visited:
+            continue
+
+        # BFS to find all nodes in this connected component
+        component = []
+        queue = [start_node]
+        while queue:
+            node = queue.pop(0)
+            if node in visited:
+                continue
+            visited.add(node)
+            component.append(node)
+            for neighbour in adjacency[node]:
+                if neighbour not in visited:
+                    queue.append(neighbour)
+
+        components.append(component)
+
+    # Order each component into a continuous chain
+    node_sequences = []
+    if obc_types is not None:
+        type_sequences = []
+    else:
+        type_sequences = None
+
+    node_to_type = dict(zip(obc_nodes, obc_types))
+
+    for component in components:
+        ordered = _order_chain(component, adjacency)
+        node_sequences.append(np.array(ordered))
+        if obc_types is not None:
+            type_sequences.append(np.array([node_to_type[n] for n in ordered]))
+
+    return node_sequences, type_sequences
+
+
+def _order_chain(component, adjacency):
+    """
+    Order a connected component into a linear chain.
+    Starts from an endpoint (a node with only 1 neighbour in the component),
+    or any node if the sequence forms a closed loop.
+    """
+    component_set = set(component)
+
+    # Restrict adjacency to this component only
+    local_adj = {n: adjacency[n] & component_set for n in component}
+
+    # Find an endpoint (degree 1) to start from; fall back to any node for loops
+    start = next(
+        (n for n in component if len(local_adj[n]) == 1),
+        component[0]
+    )
+
+    ordered = []
+    visited = set()
+    current = start
+
+    while current is not None:
+        ordered.append(current)
+        visited.add(current)
+        neighbours = local_adj[current] - visited
+        current = next(iter(neighbours), None)
+
+    return ordered
