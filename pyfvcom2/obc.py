@@ -125,3 +125,4 @@ class OBCManager:
             atts = {'long_name': 'Open Boundary Elevation', 'units': 'meters'}
             ncfile.add_variable('elevation', self._zeta, ['time', 'nobc'],
                                 attributes=atts, ncopts=ncopts)
+

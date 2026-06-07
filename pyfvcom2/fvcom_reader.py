@@ -30,11 +30,13 @@ class FVCOMReader:
     DAYS_PER_MILLISECOND = 1.0 / (1000.0 * 60.0 * 60.0 * 24.0)
 
     def __init__(self,
-                 file_paths: Union[str, List[str]]):
+                 file_paths: Union[str, List[str]],
+                 projection: str=None):
         """Initialize the FVCOMReader with the path to the netCDF file.
 
         Args:
             file_paths (str, list): Path to the FVCOM netCDF file.
+            projection (str, optional): EPSG projection code, as either EPSG:xxxx or xxxx
         """
         # Handle single file path or list of file paths
         if isinstance(file_paths, str):
@@ -45,12 +47,17 @@ class FVCOMReader:
         # Load only the first file initially for metadata and time-independent data
         print(f'Accessing FVCOM metadata from: {self.file_paths[0]}')
         self._metadata_dataset = Dataset(self.file_paths[0])
-
         self._grid = None  # Lazy initialization
         self._z_level_cache = {}  # Cache for time-dependent z levels
 
         # Build the time index mapping for multiple files
         self._build_time_index_mapping()
+
+        if projection is None and hasattr(self._metadata_dataset,'CoordinateProjection'):
+            self._projection = self._metadata_dataset.CoordinateProjection.split(':')[-1]
+        else:
+            self._projection = projection.split(':')[-1]
+
 
     def _build_time_index_mapping(self):
         """Build a mapping from datetime to (file_path, local_time_index)"""
@@ -142,9 +149,9 @@ class FVCOMReader:
             Grid: The grid object containing mesh structure and open boundaries.
         """
         if self._grid is None:
-            mesh_data = self._extract_mesh_data()
+            mesh_data, coordinate_system = self._extract_mesh_data()
             sigma_data = self._extract_sigma_data()
-            self._grid = Grid(mesh_data, sigma_data, "geographic")
+            self._grid = Grid(mesh_data, sigma_data, coordinate_system, epsg_code=self._projection)
         return self._grid
 
     @property
@@ -459,9 +466,23 @@ class FVCOMReader:
         # Extract basic mesh components
         nodes = np.arange(1, self._metadata_dataset.dimensions['node'].size+1) # TBC zero based indexing kept here.
         triangles = self._metadata_dataset.variables['nv'][:].T - 1  # Convert to 0-based indexing, transpose to (n_elem, 3)
-        x1 = self._metadata_dataset.variables['lon'][:]
-        x2 = self._metadata_dataset.variables['lat'][:]
+        
+        if getattr(self._metadata_dataset, 'CoordinateSystem', None) == 'Cartesian':
+            x1 = self._metadata_dataset.variables['x'][:]
+            x2 = self._metadata_dataset.variables['y'][:]
+            if self._projection is not None:
+                # This assumes the coordinate projection in the netCDF is either EPSG:xxxxx or just xxxxxx
+                coordinate_system = 'cartesian'
+            else:
+                raise PyFVCOM2ValueError(f"Cartesian coordinates specificed but no CoordinateProjection provided in file or passed")
+                
+        else:
+            x1 = self._metadata_dataset.variables['lon'][:]
+            x2 = self._metadata_dataset.variables['lat'][:]
+            coordinate_system = 'geographic'
+
         x3 = self._return_grid_variable_data('h')[:]
+
 
         if 'obc_nodes' in self._metadata_dataset.variables:
             # Just a list of all nodes in restart output, so need to parse to seperate open boundaries
@@ -471,7 +492,7 @@ class FVCOMReader:
             open_bdy_node_lists = None
             bdy_types = None
 
-        return MeshData(triangles, nodes, x1, x2, x3, bdy_types, open_bdy_node_lists)
+        return MeshData(triangles, nodes, x1, x2, x3, bdy_types, open_bdy_node_lists), coordinate_system
     
     def _extract_sigma_data(self) -> SigmaData:
         """Extract sigma coordinate data from FVCOM output file.

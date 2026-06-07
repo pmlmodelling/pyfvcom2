@@ -22,11 +22,6 @@ default_fvcom_to_cmems_var_names = {'temp': 'thetao',
                                     'zeta': 'zos'}
 
 
-
-
-
-
-
 class CMEMSReader:
     """Class to read CMEMS Data files"""
 
