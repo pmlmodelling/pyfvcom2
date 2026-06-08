@@ -8,7 +8,7 @@ from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 from matplotlib.tri import Triangulation, LinearTriInterpolator
 from typing import Optional
 
-from .cmems_reader import CMEMSReader, default_fvcom_to_cmems_var_names
+from .forcing_reader import CMEMSReader, BarentsReader, default_fvcom_to_cmems_var_names, default_fvcom_to_barents_var_names
 from .coordinates import sigma_to_z_coords, pol2cart, cart2pol
 from .exceptions import PyFVCOM2ValueError
 from .fvcom_reader import FVCOMReader
@@ -37,29 +37,20 @@ class Interpolator(ABC):
         """
         pass
 
-
-class CMEMSInterpolator(Interpolator):
-    """ CMEMS interpolator class
-    
-    Args:
-        cmems_reader (CMEMSReader): An instance of CMEMSReader with loaded data.
-        fvcom_name_map (dict): A mapping of variable names between FVCOM and CMEMS.
-        The keys are FVCOM variable names and the values are CMEMS variable names.
-    
+class RegularInterpolator(Interpolator):
+    """ Regular grid interpolator class, for regular and curvilinear grids
+   
+    Expects:
+        self.source_reader an instance of a reader class (e.g., CMEMSReader) that has loaded data and provides methods to access it.
+        self.variable_mapping a dictionary mapping FVCOM variable names to source variable names. The keys are FVCOM variable names and the values are source variable names.
+        self._model a string identifier for the source model (e.g., "CMEMS") used in error messages.
     """
 
-    def __init__(self, cmems_reader: CMEMSReader, fvcom_to_cmems_var_names: Optional[dict] = None):
+    def __init__(self):
         super().__init__()
 
-        self.cmems_reader = cmems_reader
-
-        if fvcom_to_cmems_var_names is None:
-            self.fvcom_to_cmems_var_names = default_fvcom_to_cmems_var_names
-        else:
-            self.fvcom_to_cmems_var_names = fvcom_to_cmems_var_names
-
     def interpolate(self, coordinates: InterpolationCoordinates, fvcom_var_name: str) -> np.ndarray:
-        """Perform interpolation operation for CMEMS data.
+        """Perform interpolation operation 
 
         Args:
             coordinates (InterpolationCoordinates): Space and time coordinates for the FVCOM grid; i.e., these
@@ -72,31 +63,31 @@ class CMEMSInterpolator(Interpolator):
             and for 3D this will be (time, depth, points), where points may be either nodes or elements
             depending on the variable.
         """
-        cmems_var_name = self.fvcom_to_cmems_var_names.get(fvcom_var_name)
-        if cmems_var_name is None:
+        regular_var_name = self.variable_mapping.get(fvcom_var_name, None)
+        if regular_var_name is None:
             raise PyFVCOM2ValueError(
-                f"No CMEMS variable mapping found for FVCOM variable '{fvcom_var_name}'. "
+                f"No {self._model} variable mapping found for FVCOM variable '{fvcom_var_name}'. "
                 f"Available mappings: {self.fvcom_to_cmems_var_names}"
             )
 
-        print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid.")
+        print(f"Interpolating {self._model} {regular_var_name} to FVCOM grid.")
 
         # Calculate the number of dimensions of the CMEMS variable
-        var_ndims = self.cmems_reader.get_var_ndims(cmems_var_name)
+        var_ndims = self.source_reader.get_var_ndims(regular_var_name)
 
         # If a 2D spatial variable (time, lat, lon)
         if var_ndims == 3:
-            return self._interpolate_2d(coordinates, cmems_var_name)
+            return self._interpolate_2d(coordinates, regular_var_name)
         # If a 3D spatial variable (time, depth, lat, lon)
         elif var_ndims == 4:
-            return self._interpolate_3d(coordinates, cmems_var_name)
+            return self._interpolate_3d(coordinates, regular_var_name)
 
-    def _interpolate_2d(self, coordinates: InterpolationCoordinates, cmems_var_name: str) -> np.ndarray:
-        """Interpolate a 2D CMEMS variable onto the FVCOM grid.
+    def _interpolate_2d(self, coordinates: InterpolationCoordinates, regular_var_name: str) -> np.ndarray:
+        """Interpolate a 2D variable onto the FVCOM grid.
 
         Args:
             coordinates (InterpolationCoordinates): Space and time coordinates for the FVCOM grid.
-            cmems_var_name (str): Name of the CMEMS variable to interpolate.
+            regular_var_name (str): Name of the variable to interpolate.
 
         Returns:
             np.ndarray: Interpolated variable on the FVCOM grid.
@@ -120,32 +111,31 @@ class CMEMSInterpolator(Interpolator):
 
         # Loop over each time index to perform interpolation
         for d_idx, target_date in enumerate(dates):
-            print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
+            print(f"Interpolating {self._model} {regular_var_name} to FVCOM grid for date: {target_date}.")
 
-            # Get the filled 2D CMEMS variable data on the regular grid, with
-            # linear interpolation in time between bracketing CMEMS time steps.
-            t0, t1, alpha = self.cmems_reader._get_bracketing_times(target_date)
-            var_filled_0 = self.cmems_reader.get_filled_2D_var(cmems_var_name, t0)
+            # Get the filled 2D variable data on the regular grid, with
+            # linear interpolation in time between bracketing time steps.
+            t0, t1, alpha = self.source_reader._get_bracketing_times(target_date)
+            var_filled_0 = self.source_reader.get_filled_2D_var(regular_var_name, t0)
             if alpha == 0.0:
                 var_filled = var_filled_0
             else:
-                var_filled_1 = self.cmems_reader.get_filled_2D_var(cmems_var_name, t1)
+                var_filled_1 = self.source_reader.get_filled_2D_var(regular_var_name, t1)
                 var_filled = (1.0 - alpha) * var_filled_0 + alpha * var_filled_1
 
             # Interpolate from the regular grid onto the FVCOM points
-            interp = interpolate.RegularGridInterpolator(
-                (self.cmems_reader.lons, self.cmems_reader.lats), var_filled.T
-            )
+            interp = self._onelayer_interpolator(var_filled.T)
+
             interpolated_data[d_idx, :] = interp((coordinates.x1, coordinates.x2))
 
         return interpolated_data
 
-    def _interpolate_3d(self, coordinates: InterpolationCoordinates, cmems_var_name: str) -> np.ndarray:
-        """Interpolate a 3D CMEMS variable onto the FVCOM grid.
+    def _interpolate_3d(self, coordinates: InterpolationCoordinates, regular_var_name: str) -> np.ndarray:
+        """Interpolate a 3D variable onto the FVCOM grid.
 
         Args:
             coordinates (InterpolationCoordinates): Space and time coordinates for the FVCOM grid.
-            cmems_var_name (str): Name of the CMEMS variable to interpolate.
+            regular_var_name (str): Name of the variable to interpolate.
 
         Returns:
             np.ndarray: Interpolated variable on the FVCOM grid.
@@ -169,29 +159,27 @@ class CMEMSInterpolator(Interpolator):
         interpolated_data = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
 
         for d_idx, target_date in enumerate(dates):
-            print(f"Interpolating CMEMS {cmems_var_name} to FVCOM grid for date: {target_date}.")
+            print(f"Interpolating {self._model} {regular_var_name} to FVCOM grid for date: {target_date}.")
 
-            # Get the filled 3D CMEMS variable data, with linear interpolation
-            # in time between bracketing CMEMS time steps.
-            t0, t1, alpha = self.cmems_reader._get_bracketing_times(target_date)
-            var_filled_0 = self.cmems_reader.get_filled_3D_var(cmems_var_name, t0)
+            # Get the filled 3D variable data, with linear interpolation
+            # in time between bracketing time steps.
+            t0, t1, alpha = self.source_reader._get_bracketing_times(target_date)
+            var_filled_0 = self.source_reader.get_filled_3D_var(regular_var_name, t0)
             if alpha == 0.0:
                 var_filled = var_filled_0
             else:
-                var_filled_1 = self.cmems_reader.get_filled_3D_var(cmems_var_name, t1)
+                var_filled_1 = self.source_reader.get_filled_3D_var(regular_var_name, t1)
                 var_filled = (1.0 - alpha) * var_filled_0 + alpha * var_filled_1
 
             # First, interpolate onto the horizontal grid for each depth level
             var_on_fvcom_horizontal_grid = np.empty(
-                (self.cmems_reader.n_depths, n_points), dtype=var_filled.dtype
+                (self.source_reader.n_depths, n_points), dtype=var_filled.dtype
             )
 
-            for depth_index in range(self.cmems_reader.n_depths):
+            for depth_index in range(self.source_reader.n_depths):
                 layer_data = var_filled[depth_index, :, :]
 
-                interp = interpolate.RegularGridInterpolator(
-                    (self.cmems_reader.lons, self.cmems_reader.lats), layer_data.T
-                )
+                interp = interp = self._onelayer_interpolator(layer_data.T)
                 var_on_fvcom_horizontal_grid[depth_index, :] = interp((coordinates.x1, coordinates.x2))
 
             # Next, interpolate onto the FVCOM vertical sigma layers for each horizontal point
@@ -202,7 +190,7 @@ class CMEMSInterpolator(Interpolator):
                 target_depths = coordinates.x3[:, i]
 
                 interp = interpolate.interp1d(
-                    self.cmems_reader.depth_levels,
+                    self.source_reader.depth_levels,
                     var_profile,
                     kind="linear",
                     bounds_error=False,
@@ -214,7 +202,58 @@ class CMEMSInterpolator(Interpolator):
         
         return interpolated_data
 
+class CMEMSInterpolator(RegularInterpolator):
+    """ CMEMS interpolator class
+    
+    Args:
+        cmems_reader (CMEMSReader): An instance of CMEMSReader with loaded data.
+        fvcom_name_map (dict): A mapping of variable names between FVCOM and CMEMS.
+        The keys are FVCOM variable names and the values are CMEMS variable names.
+    
+    """
 
+    def __init__(self, cmems_reader: CMEMSReader, fvcom_to_cmems_var_names: Optional[dict] = None):
+        super().__init__()
+
+        self._model = "CMEMS"
+        self.source_reader = cmems_reader
+
+        if fvcom_to_cmems_var_names is None:
+            self.variable_mapping = default_fvcom_to_cmems_var_names
+        else:
+            self.variable_mapping = fvcom_to_cmems_var_names
+
+    def _onelayer_interpolator(self, data):
+        return interpolate.RegularGridInterpolator(
+                (self.source_reader.lons, self.source_reader.lats), data)
+ 
+class BarentsInterpolator(RegularInterpolator):
+    """ Barents interpolator class
+    
+    Args:
+        barents_reader (BarentsReader): An instance of BarentsReader with loaded data.
+        fvcom_name_map (dict): A mapping of variable names between FVCOM and Barents model.
+    
+    """
+
+    def __init__(self, barents_reader: BarentsReader, fvcom_to_barents_var_names: Optional[dict] = None):
+        super().__init__()
+
+        self.source_reader = barents_reader
+        self._model = "metNO Barents"
+
+        if fvcom_to_barents_var_names is None:
+            self.variable_mapping = default_fvcom_to_barents_var_names
+        else:
+            self.fvcom_to_variable_mappingcmems_var_names = fvcom_to_barents_var_names
+
+        # Setup triangulation for faster interpolation later
+        source_points = np.column_stack([self.source_reader._lon_grid.ravel(), self.source_reader._lat_grid.ravel()])
+        self._tri = Delaunay(source_points)
+
+    def _onelayer_interpolator(self, data):
+        return interpolate.LinearNDInterpolator(self._tri, data.ravel(), fill_value=np.nan)
+    
 class FVCOMInterpolator(Interpolator):
     """ FVCOM interpolator class
     
