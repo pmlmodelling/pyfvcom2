@@ -387,6 +387,7 @@ def sigma_tanh(levels: int, dl: float, du: float) -> np.ndarray:
         # k'th position starts from 1 which is right because we want the initial value to be zero for sigma levels.
         dist[k] = (x1 + x2) / x3 - 1
 
+    return dist
 
 def hybrid_sigma_coordinate(
     levels: int,
