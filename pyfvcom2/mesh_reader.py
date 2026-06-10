@@ -328,9 +328,8 @@ def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None, depth_filenam
         bdy_types = None
 
     if depth_filename is not None:
-        fileRead = _safe_open(depth_filename, "r", file_type='depth')
-        lines = fileRead.readlines()
-        fileRead.close()
+        with _safe_open(depth_filename, "r", file_type="depth") as file_read:
+            lines = file_read.readlines()
         # First line is header, rest is x,y,z data
         Z = np.asarray([l.strip().split()[-1] for l in lines[1:]], dtype=float)
 
