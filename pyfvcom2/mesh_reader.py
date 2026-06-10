@@ -332,6 +332,11 @@ def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None, depth_filenam
             lines = file_read.readlines()
         # First line is header, rest is x,y,z data
         Z = np.asarray([l.strip().split()[-1] for l in lines[1:]], dtype=float)
+        if len(Z) != len (X):
+            raise PyFVCOM2ValueError(
+                 f"Incorrect depth data provided: {len(Z)} depth values provided in {depth_filename} for grid with {len(X)} points. "
+                )
+
 
     return MeshData(triangle, nodes, X, Y, Z, bdy_types, open_bdy_node_lists)
 
