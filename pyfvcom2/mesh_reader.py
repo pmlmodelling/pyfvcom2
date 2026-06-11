@@ -42,7 +42,7 @@ class MeshData(NamedTuple):
     nodes_bdy: Optional[List[List[int]]]
 
 
-def _safe_open(filename: str, mode: str = "r"):
+def _safe_open(filename: str, mode: str = "r", file_type: str='mesh'):
     """
     Safely open a file with PyFVCOM2 exception handling.
 
@@ -59,9 +59,9 @@ def _safe_open(filename: str, mode: str = "r"):
     try:
         return open(filename, mode)
     except FileNotFoundError as e:
-        raise PyFVCOM2FileNotFoundError(f"Could not find mesh file: {filename}") from e
+        raise PyFVCOM2FileNotFoundError(f"Could not find {file_type} file: {filename}") from e
     except (IOError, OSError) as e:
-        raise PyFVCOM2FileNotFoundError(f"Could not open mesh file: {filename}") from e
+        raise PyFVCOM2FileNotFoundError(f"Could not open {file_type} file: {filename}") from e
 
 
 def read_mesh_file(filename: str, mesh_type: str, **kwargs) -> MeshData:
@@ -208,7 +208,7 @@ def read_sms_mesh(mesh: str, nodestrings: Optional[bool] = False) -> MeshData:
         return MeshData(triangle, nodes, X, Y, Z, types, None)
 
 
-def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None) -> MeshData:
+def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None, depth_filename: Optional[str] = None) -> MeshData:
     """
     Reads in the FVCOM unstructured grid format.
 
@@ -224,6 +224,8 @@ def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None) -> MeshData:
             Followed by 'node_index, x, y, z' for nnn nodes
         obc_filename (str, optional): Full path to the FVCOM OBC file. This is
             used to read in the open boundary node strings if provided.
+        depth_filename (str, optional): Full path to the FVCOM dep file. This is
+            used to overwrite the depth values if provided.
 
     Returns:
         MeshData: Named tuple containing:
@@ -324,6 +326,17 @@ def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None) -> MeshData:
     else:
         open_bdy_node_lists = None
         bdy_types = None
+
+    if depth_filename is not None:
+        with _safe_open(depth_filename, "r", file_type="depth") as file_read:
+            lines = file_read.readlines()
+        # First line is header, rest is x,y,z data
+        Z = np.asarray([l.strip().split()[-1] for l in lines[1:]], dtype=float)
+        if len(Z) != len (X):
+            raise PyFVCOM2ValueError(
+                 f"Incorrect depth data provided: {len(Z)} depth values provided in {depth_filename} for grid with {len(X)} points. "
+                )
+
 
     return MeshData(triangle, nodes, X, Y, Z, bdy_types, open_bdy_node_lists)
 
