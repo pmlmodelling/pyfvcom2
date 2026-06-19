@@ -92,6 +92,9 @@ from .nest import (
 # Import OBC forcing functionality
 from .obc import OBCManager
 
+# Import river forcing functionality
+from .river import RiverManager, read_river_config
+
 # Import namelist manager
 from .namelist import NamelistManager
 
@@ -197,6 +200,10 @@ __all__ = [
     "NestManager",
     "Nest",
     "GridBand",
+    # OBC forcing
+    "OBCManager",
+    # River forcing
+    "RiverManager",
     # Namelist
     "NamelistManager",
     # Bathymetry smoothers
