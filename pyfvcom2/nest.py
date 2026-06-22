@@ -546,6 +546,11 @@ class NestManager:
             fvcom_var_name: FVCOM name for the forcing variable.
             horizontal_position: Whether coordinates are at mesh nodes or element centres ('node' or 'element').
         """
+        if not self._dates:
+            raise PyFVCOM2ValueError(
+                    f"No output dates set, call set_dates before calling add_forcing_data."
+                )
+
         interpolation_coords = self.get_interpolation_coordinates(horizontal_position, 'layer_centre')
         forcing_data = interpolator.interpolate(interpolation_coords, fvcom_var_name)
         self._forcing_data[fvcom_var_name] = forcing_data
