@@ -21,14 +21,16 @@ default_fvcom_to_cmems_var_names = {'temp': 'thetao',
                                     'v': 'vo',
                                     'zeta': 'zos'}
 
+# Default mapping of FVCOM variable names to Barents 2.5km variable names
+default_fvcom_to_barents_var_names = {'temp':'temperature', 
+        'salinity':'salinity',
+        'u':'u_eastward',
+        'v':'v_northward',
+        'zeta':'zeta'}
 
 
-
-
-
-
-class CMEMSReader:
-    """Class to read CMEMS Data files"""
+class RegularReader:
+    """Class to read regular gridded Data files"""
 
     def __init__(
         self,
@@ -36,6 +38,14 @@ class CMEMSReader:
         reference_var_name: str,
         dimension_var_names: Optional[dict] = None,
     ):
+        if not hasattr(self, '_default_dims'):
+            self._default_dims = {
+            "time": "time",
+            "depth": "depth",
+            "longitude": "longitude",
+            "latitude": "latitude"
+            }
+
         # Handle both single file and list of files
         if isinstance(file_path, str):
             self.file_paths = [file_path]
@@ -43,27 +53,27 @@ class CMEMSReader:
             self.file_paths = file_path
 
         # Load only the first file initially for metadata and time-independent data
-        print(f'Accessing CMEMS metadata from: {self.file_paths[0]}')
+        print(f'Accessing metadata from: {self.file_paths[0]}')
         self._metadata_dataset = xr.open_dataset(self.file_paths[0])
         
         # Set dimension variable names
         self.time_dim_name = (
-            dimension_var_names.get("time", "time") if dimension_var_names else "time"
+            dimension_var_names.get("time", "time") if dimension_var_names else self._default_dims["time"]
         )
         self.depth_dim_name = (
             dimension_var_names.get("depth", "depth")
             if dimension_var_names
-            else "depth"
+            else self._default_dims["depth"]
         )
         self.lon_dim_name = (
             dimension_var_names.get("longitude", "longitude")
             if dimension_var_names
-            else "longitude"
+            else self._default_dims["longitude"]
         )
         self.lat_dim_name = (
             dimension_var_names.get("latitude", "latitude")
             if dimension_var_names
-            else "latitude"
+            else self._default_dims["latitude"]
         )
 
         # Confirm dimension variable names exist in dataset. Assumes dimension and variable have same name.
@@ -73,7 +83,7 @@ class CMEMSReader:
                 and dim_name not in self._metadata_dataset.variables
             ):
                 raise PyFVCOM2ValueError(
-                    f"Dimension variable name {dim_name} not found in CMEMS file {self.file_paths[0]}"
+                    f"Dimension variable name {dim_name} not found in dataset {self.file_paths[0]}"
                 )
 
         # If reading 3D variables, check depth dimension exists
@@ -190,12 +200,15 @@ class CMEMSReader:
             
             required_file_path, local_time_index = self._time_to_file_map[closest_time]
 
-        dataset = xr.open_dataset(required_file_path)
+        if hasattr(self, '_metadata_dataset') and self._metadata_dataset is not None and required_file_path == self.file_paths[0]:
+            dataset = self._metadata_dataset
+        else:
+            dataset = xr.open_dataset(required_file_path)
 
         return dataset, local_time_index
 
     def _get_bracketing_times(self, target_datetime):
-        """Find the two CMEMS time steps that bracket a target datetime.
+        """Find the two time steps that bracket a target datetime.
 
         Used to support linear temporal interpolation when the requested output
         time step lies between two source time steps (e.g. hourly output from
@@ -208,7 +221,7 @@ class CMEMSReader:
             tuple: (t0, t1, alpha) where t0 and t1 are the bounding CMEMS
             datetimes (np.datetime64) and alpha is the fractional weight for t1
             so that the interpolated value is ``(1 - alpha)*v(t0) + alpha*v(t1)``.
-            When target_datetime exactly matches a CMEMS time step, t0 == t1
+            When target_datetime exactly matches a time step, t0 == t1
             and alpha == 0.0.
         """
         if isinstance(target_datetime, datetime):
@@ -260,15 +273,22 @@ class CMEMSReader:
         self.mask_2D = reference_mask_2D
         self.mask_3D = reference_mask_3D
 
+    def _add_ll_grid(self):
+        """Determine the unmasked longitude and latitude points.
+
+        A 2D meshgrid is first formed from the 1D lon-lat variables.
+        """
+        lons = self._metadata_dataset.variables[f"{self.lon_dim_name}"][:]
+        lats = self._metadata_dataset.variables[f"{self.lat_dim_name}"][:]
+        self._lon_grid, self._lat_grid = np.meshgrid(lons, lats)
+
     def _set_unmasked_lons_lats(self):
         """Determine the unmasked longitude and latitude points.
 
         A 2D meshgrid is first formed from the 1D lon-lat variables. Unmasked
         lons and lats are then identified from this.
         """
-        lons = self._metadata_dataset.variables[f"{self.lon_dim_name}"][:]
-        lats = self._metadata_dataset.variables[f"{self.lat_dim_name}"][:]
-        self._lon_grid, self._lat_grid = np.meshgrid(lons, lats)
+        self._add_ll_grid()
 
         self._unmasked_lons = self._lon_grid[~self.mask_2D]
         self._unmasked_lats = self._lat_grid[~self.mask_2D]
@@ -650,3 +670,21 @@ class CMEMSReader:
         """Backward compatibility method using time index"""
         target_datetime = self._all_dates[time_index]
         return self.get_filled_3D_var(var_name, target_datetime)
+
+
+
+class CMEMSReader(RegularReader):
+    """CMEMS reader class. Currently identical to RegularReader, but separated for potential future CMEMS-specific functionality."""
+    pass
+
+class BarentsReader(RegularReader):
+    """Barents reader class. Currently identical to RegularReader, but separated for potential future Barents-specific functionality."""
+
+    def _add_ll_grid(self):
+        """Determine the unmasked longitude and latitude points.
+
+        A 2D meshgrid is first formed from the 1D lon-lat variables.
+        """
+        self._lon_grid = self._metadata_dataset.variables[f"{self.lon_dim_name}"][:].to_numpy()
+        self._lat_grid = self._metadata_dataset.variables[f"{self.lat_dim_name}"][:].to_numpy()
+

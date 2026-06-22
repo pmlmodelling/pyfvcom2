@@ -65,7 +65,7 @@ from .file_utils import find_file, find_files
 
 # Import readers
 from .fvcom_reader import FVCOMReader
-from .cmems_reader import CMEMSReader, default_fvcom_to_cmems_var_names
+from .forcing_reader import CMEMSReader, BarentsReader, default_fvcom_to_cmems_var_names
 
 # Import interpolation functionality
 from .interpolation_coordinates import InterpolationCoordinates
