@@ -132,6 +132,12 @@ from .tide_reader import (
 # Import tide prediction and management
 from .tide import TideManager, predict_tide
 
+# Import surface forcing
+from .surface import (
+    ERA5Reader, ERA5Interpolator, SurfaceManager
+)
+
+
 # Define what gets imported with "from pyfvcom2 import *"
 __all__ = [
     "__version__",
@@ -180,11 +186,14 @@ __all__ = [
     "FVCOMReader",
     "CMEMSReader",
     "default_fvcom_to_cmems_var_names",
+    "ERA5Reader",
     # Interpolation
     "InterpolationCoordinates",
     "Interpolator",
     "CMEMSInterpolator",
     "FVCOMInterpolator",
+    "ERA5Interpolator",
+    "SurfaceManager"
     # Grid functionality
     "Grid",
     "OpenBoundary",
