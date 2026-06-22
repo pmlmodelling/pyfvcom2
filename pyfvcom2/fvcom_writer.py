@@ -94,6 +94,131 @@ class FVCOMWriter(object):
         atts = {'long_name': 'Calendar Date', 'format': 'String: Calendar Time', 'time_zone': 'UTC'}
         self.add_variable('Times', Times, ['time', 'DateStrLen'], format='c', attributes=atts, **kwargs)
 
+
+    def write_fvcom_grid(self, grid, subset_nodes: NDArray[np.bool_]=None,
+                subset_elements: NDArray[np.bool_]=None, ncopts=None, depth:bool=True):
+        """Add fvcom grid data
+
+        Args:
+            grid: Grid object from which to write the coordinates (can't type argument as circular dependency)
+            subset_nodes: Boolean array to subset the nodes, if provided, otherwise all are written
+            subset_elementss: Boolean array to subset the elements, if provided, otherwise all are written
+            depth: Boolean, include the depth related variables (sigma layers, levels, h etc), defaults to true
+        """
+
+        if subset_nodes is None:
+            subset_nodes = np.ones(len(grid.x_nodes), dtype=bool)
+        if subset_elements is None:
+            subset_elements = np.ones(len(grid.x_elements), dtype=bool)
+
+        if ncopts is None:
+            ncopts = {}
+
+        atts = {'units': 'meters', 'long_name': 'nodal x-coordinate'}
+        self.add_variable('x', grid.x_nodes[subset_nodes], ['node'],
+                attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'meters', 'long_name': 'nodal y-coordinate'}
+        self.add_variable('y', grid.y_nodes[subset_nodes], ['node'],
+                attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'degrees_east', 'standard_name': 'longitude',
+                'long_name': 'nodal longitude'}
+        self.add_variable('lon', grid.lon_nodes[subset_nodes], ['node'],
+                attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'degrees_north', 'standard_name': 'latitude',
+                'long_name': 'nodal latitude'}
+        self.add_variable('lat', grid.lat_nodes[subset_nodes], ['node'],
+                attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'meters', 'long_name': 'zonal x-coordinate'}
+        self.add_variable('xc', grid.x_elements[subset_elements], ['nele'],
+                attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'meters', 'long_name': 'zonal y-coordinate'}
+        self.add_variable('yc', grid.y_elements[subset_elements], ['nele'],
+                attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'degrees_east', 'standard_name': 'longitude',
+                'long_name': 'zonal longitude'}
+        self.add_variable('lonc', grid.lon_elements[subset_elements],
+                ['nele'], attributes=atts, ncopts=ncopts)
+
+        atts = {'units': 'degrees_north', 'standard_name': 'latitude',
+                'long_name': 'zonal latitude'}
+        self.add_variable('latc', grid.lat_elements[subset_elements],
+                ['nele'], attributes=atts, ncopts=ncopts)
+
+        atts = {'long_name': 'nodes surrounding element'}
+        nv = grid.triangles[subset_elements, :].T + 1  # FVCOM uses 1-based indexing
+
+        self.add_variable('nv', nv,
+                    ['three', 'nele'], format='i4', attributes=atts,
+                    ncopts=ncopts)
+
+        if depth:
+            atts = {'long_name': 'Sigma Layers',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglay eta: zeta depth: h'}
+            self.add_variable('siglay', grid.sigma_layers[subset_nodes, :].T,
+                    ['siglay', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Levels',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglev eta: zeta depth: h'}
+            self.add_variable('siglev', grid.sigma_levels[subset_nodes, :].T,
+                    ['siglev', 'node'], attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Layers',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglay_center eta: '
+                    + 'zeta_center depth: h_center'}
+            self.add_variable('siglay_center', grid.sigmac_layers[
+                    subset_elements, :].T, ['siglay', 'nele'], attributes=atts,
+                    ncopts=ncopts)
+
+            atts = {'long_name': 'Sigma Levels',
+                    'standard_name': 'ocean_sigma/general_coordinate',
+                    'positive': 'up',
+                    'valid_min': -1.,
+                    'valid_max': 0.,
+                    'formula_terms': 'sigma: siglev_center eta: '
+                    + 'zeta_center depth: h_center'}
+            self.add_variable('siglev_center', grid.sigmac_levels[
+                    subset_elements, :].T, ['siglev', 'nele'], attributes=atts,
+                    ncopts=ncopts)
+
+            atts = {'long_name': 'Bathymetry',
+                    'standard_name': 'sea_floor_depth_below_geoid',
+                    'units': 'm',
+                    'positive': 'down',
+                    'grid': 'Bathymetry_mesh',
+                    'coordinates': 'x y',
+                    'type': 'data'}
+            self.add_variable('h', grid.bathy_nodes[subset_nodes], ['node'],
+                    attributes=atts, ncopts=ncopts)
+
+            atts = {'long_name': 'Bathymetry',
+                    'standard_name': 'sea_floor_depth_below_geoid',
+                    'units': 'm',
+                    'positive': 'down',
+                    'grid': 'grid1 grid3',
+                    'coordinates': 'latc lonc',
+                    'grid_location': 'center'}
+            self.add_variable('h_center', grid.bathy_elements[subset_elements],
+                    ['nele'], attributes=atts, ncopts=ncopts)
+
+
     def __enter__(self):
         return self
 
