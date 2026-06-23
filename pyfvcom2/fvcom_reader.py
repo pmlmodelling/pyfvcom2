@@ -457,7 +457,7 @@ class FVCOMReader:
                                                        vertical_coordinate_system=vertical_coordinate_system,
                                                        dates=dates)
 
-    def _extract_mesh_data(self) -> MeshData:
+    def _extract_mesh_data(self) -> tuple[MeshData, str]:
         """Extract mesh data from FVCOM output file.
         
         Returns:
