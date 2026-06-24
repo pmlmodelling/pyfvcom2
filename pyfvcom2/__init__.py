@@ -134,7 +134,7 @@ from .tide import TideManager, predict_tide
 
 # Import surface forcing
 from .surface import (
-    ERA5Reader, ERA5Interpolator, SurfaceManager
+    ERA5Reader, ERA5Interpolator, SurfaceManager, default_ice_nudge_vars
 )
 
 

@@ -43,7 +43,15 @@ default_fvcom_surface_vars = {
     'relative_humidity': 'node'
 }
 
-
+# Default variables for ICE_NUDGE module
+default_ice_nudge_vars = {'node':
+    {'AICE':{'long_name':'Ice Cover', 'units':'fraction [0-1]'},
+     'HICE':{'long_name':'Ice Thickness', 'units':'[m]'},
+     'ISALT':{'long_name':'Ice salinity', 'units':''}},
+    'element':
+    {'UICE':{'long_name':'Eastward Ice Speed', 'units':'m/s'},
+     'VICE':{'long_name':'Northward Ice Speed', 'units':'m/s'}}}
+    
 from .forcing_reader import RegularReader
 class ERA5Reader(RegularReader):
     def __init__(
@@ -234,7 +242,8 @@ class SurfaceManager:
 
     def create_forcing_file(self, output_path: str,
                             format='NETCDF4',
-                            ice_forcing: Optional[bool]=False,
+                            write_standard_atmosphere: Optional[bool]=True,
+                            additional_surface_variables: Optional[dict]=None,
                             **kwargs) -> None:
 
         """Write data to a FVCOM surface forcing file in NetCDF4 format
@@ -242,6 +251,11 @@ class SurfaceManager:
         Args:
             output_path: Path to the output NetCDF file.
             format: NetCDF format to use. Defaults to 'NETCDF4'.
+            write_standard_atmosphere: Bool, optional. Write the standard atmospheric forcing (default is on)
+            additional_surface: Dict, optional. Metadata for additional variables to write, expects a dict of
+                the form {'node':{var1:{attributes}, var2:{attributes}, 'elements':{'var1':{attributes}}
+                This allows other surface forcing (e.g. fabm, ice, waves to be added), default_ice_nudge_vars
+                gives an example of its use for the ICE_NUDGE module in FVCOM
             **kwargs: Additional keyword arguments for writing the forcing file.
         """
 
@@ -275,35 +289,38 @@ class SurfaceManager:
             print('Adding grid variables to netCDF')
             write_ncfile.write_fvcom_grid(self._grid_ref, depth=False)
 
-            element_variables = {
-                'uwind_speed': {'long_name': 'Eastward Wind Speed', 'units': 'm/s'},
-                'vwind_speed': {'long_name': 'Eastward Wind Speed', 'units': 'm/s'}}
+            element_variables = {}
+            node_variables = {}
+
+            if write_standard_atmosphere:
+                element_variables |= {
+                    'uwind_speed': {'long_name': 'Eastward Wind Speed', 'units': 'm/s'},
+                    'vwind_speed': {'long_name': 'Eastward Wind Speed', 'units': 'm/s'}}
 
 
-            node_variables = {
-                'precip': {
-                    'long_name': 'Precipitation',
-                    'description': 'Precipitation, ocean lose water if negative',
-                    'units': 'm s-1',
-                    'positive': 'up'
-                    },
-                'evap': {
-                    'long_name': 'Evaporation',
-                    'description': 'Evaporation, ocean lose water is negative',
-                    'units': 'm s-1',
-                    'positive': 'up'
-                    },
-                'relative_humidity': {'long_name': 'Relative Humidity', 'units': '%'},
-                'long_wave': {'long_name': 'Long Wave Radiation', 'units': 'W m-2'},
-                'short_wave': {'long_name': 'Short Wave Radiation', 'units': 'W m-2'},
-                'cloud_cover': {'long_name': 'Cloud Area Fraction', 'units': 'cloud covered fraction of sky [0,1]'},
-                'air_pressure': {'long_name': 'Surface Air Pressure', 'units': 'Pa'},
-                'air_temperature': {'long_name': 'Sea Surface Air Temperature', 'units': 'Degree (C)'}}
-
-            if ice_forcing:
                 node_variables |= {
-                        'ice_cover':{'long_name':'Ice Cover', 'units':'[0-1]'},
-                        'ice_thick':{'long_name':'Ice Thickness', 'units':'[m]'}}
+                    'precip': {
+                        'long_name': 'Precipitation',
+                        'description': 'Precipitation, ocean lose water if negative',
+                        'units': 'm s-1',
+                        'positive': 'up'
+                        },
+                    'evap': {
+                        'long_name': 'Evaporation',
+                        'description': 'Evaporation, ocean lose water is negative',
+                        'units': 'm s-1',
+                        'positive': 'up'
+                        },
+                    'relative_humidity': {'long_name': 'Relative Humidity', 'units': '%'},
+                    'long_wave': {'long_name': 'Long Wave Radiation', 'units': 'W m-2'},
+                    'short_wave': {'long_name': 'Short Wave Radiation', 'units': 'W m-2'},
+                    'cloud_cover': {'long_name': 'Cloud Area Fraction', 'units': 'cloud covered fraction of sky [0,1]'},
+                    'air_pressure': {'long_name': 'Surface Air Pressure', 'units': 'Pa'},
+                    'air_temperature': {'long_name': 'Sea Surface Air Temperature', 'units': 'Degree (C)'}}
+
+            if additional_surface_variables is not None:
+                node_variables |= additional_surface['node']
+                element_variables |= additional_surface['element']
        
             # Check all data is present
             for var in list(element_variables) + list(node_variables):
@@ -318,4 +335,5 @@ class SurfaceManager:
             for varname, atts in node_variables.items():
                 write_ncfile.add_variable(varname, self._forcing_data[varname],
                     ['time', 'node'], attributes=atts, ncopts=ncopts)
+
 
