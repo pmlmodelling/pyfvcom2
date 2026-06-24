@@ -319,8 +319,8 @@ class SurfaceManager:
                     'air_temperature': {'long_name': 'Sea Surface Air Temperature', 'units': 'Degree (C)'}}
 
             if additional_surface_variables is not None:
-                node_variables |= additional_surface['node']
-                element_variables |= additional_surface['element']
+                node_variables |= additional_surface_variables['node']
+                element_variables |= additional_surface_variables['element']
        
             # Check all data is present
             for var in list(element_variables) + list(node_variables):
