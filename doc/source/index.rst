@@ -7,7 +7,6 @@
 
    installation
    cookbook/index
-   api
    contributing
    license
    acknowledgements
