@@ -32,9 +32,9 @@ sys.path.insert(0, os.path.abspath('../../pyfvcom2'))
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ['autodoc2',
+              'myst_parser',
               'sphinx.ext.autosummary',
               'sphinx.ext.napoleon',
-              'sphinx.ext.intersphinx',
               'sphinx.ext.todo',
               'sphinx.ext.mathjax',
               'sphinx.ext.viewcode',
@@ -42,20 +42,17 @@ extensions = ['autodoc2',
               'sphinx_copybutton',
               'nbsphinx',
               'sphinx_rtd_theme',
-              'sphinxcontrib.googleanalytics',
               'IPython.sphinxext.ipython_console_highlighting']
 
 # Autodoc2
 autodoc2_packages = ['../../pyfvcom2']
 
 # Control autodoc2 output depth and content
-autodoc2_output_dir = "apidocs"
+autodoc2_output_dir = "../build/apidocs"
 autodoc2_index_template = None  # Use default template
 
 # Configure autodoc2 to generate less nested content
-autodoc2_module_all_regexes = [
-    r"pyfvcom2\..*",
-]
+autodoc2_module_all_regexes = []
 
 # Control autodoc2 content inclusion
 autodoc2_skip_module_regexes = [
@@ -76,10 +73,14 @@ templates_path = ['_templates']
 # The suffix(es) of source filenames.
 # You can specify multiple suffix as a list of string:
 #
-source_suffix = ['.rst', '.md']
+source_suffix = {
+    '.rst': 'restructuredtext',
+    '.md': 'markdown',
+}
 
 # The master toctree document.
 master_doc = 'index'
+root_doc = 'index'
 
 # Control HTML table of contents depth
 html_theme_options = {
@@ -120,7 +121,8 @@ language = 'en'
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ['**.ipynb_checkpoints']
+exclude_patterns = ['**.ipynb_checkpoints', 'api.rst', 'apidocs/**']
+suppress_warnings = ['myst.xref_missing']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
@@ -141,7 +143,7 @@ html_theme = 'sphinx_rtd_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = []
 
 # Custom sidebar templates, must be a dictionary that maps document names
 # to template names.
@@ -212,9 +214,8 @@ texinfo_documents = [
      'Miscellaneous'),
 ]
 
-# Execute notebooks
-nbsphinx_execute = 'auto'
-#nbsphinx_execute = 'always'
+# Display the committed notebooks without executing them during RTD builds.
+nbsphinx_execute = 'never'
 
 
 # Example configuration for intersphinx: refer to the Python standard library.
