@@ -53,6 +53,11 @@ dev = [
 docs = [
     "sphinx>=3.0",
     "sphinx-rtd-theme>=0.5",
+    "myst-parser",
+    "sphinx-autodoc2",
+    "sphinx-copybutton",
+    "nbsphinx",
+    "numpydoc",
     "jupyter",
     "jupyter_client",
     "ipykernel",

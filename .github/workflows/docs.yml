@@ -24,6 +24,11 @@ jobs:
           cache: pip
           cache-dependency-path: doc/requirements.txt
 
+      - name: Install Pandoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pandoc
+
       - name: Install documentation dependencies
         run: |
           python -m pip install --upgrade pip
