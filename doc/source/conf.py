@@ -18,8 +18,18 @@
 #
 import os
 import sys
+import types
+
+sys.path.insert(0, os.path.abspath('../..'))
 sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('../../pyfvcom2'))
+
+if 'pyfvcom2.version' not in sys.modules:
+    version_module = types.ModuleType('pyfvcom2.version')
+    version_module.short_version = 'X.Y.Z'
+    version_module.version = 'X.Y.Z'
+    version_module.full_version = 'X.Y.Z'
+    sys.modules['pyfvcom2.version'] = version_module
 
 
 # -- General configuration ------------------------------------------------
@@ -33,6 +43,7 @@ sys.path.insert(0, os.path.abspath('../../pyfvcom2'))
 # ones.
 extensions = ['autodoc2',
               'myst_parser',
+              'sphinx.ext.autodoc',
               'sphinx.ext.autosummary',
               'sphinx.ext.napoleon',
               'sphinx.ext.todo',
@@ -63,6 +74,13 @@ autodoc2_skip_module_regexes = [
 # Autodoc
 napoleon_google_docstring = False
 napoleon_use_ivar = True
+autodoc_mock_imports = [
+    'cartopy',
+    'cmocean',
+    'pyproj',
+    'stripy',
+    'utide',
+]
 
 # Use this kernel instead of the one stored in the notebook metadata:
 nbsphinx_kernel_name = 'python3'
@@ -121,8 +139,8 @@ language = 'en'
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
-exclude_patterns = ['**.ipynb_checkpoints', 'api.rst', 'apidocs/**']
-suppress_warnings = ['myst.xref_missing']
+exclude_patterns = ['**.ipynb_checkpoints', 'apidocs/**']
+suppress_warnings = ['myst.xref_missing', 'docutils']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'

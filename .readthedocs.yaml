@@ -24,10 +24,5 @@ formats:
 # Python requirements for building documentation
 python:
   install:
-    # Install the package itself
-    - method: pip
-      path: .
-      extra_requirements:
-        - docs
     # Install additional requirements for building docs
     - requirements: doc/requirements.txt
