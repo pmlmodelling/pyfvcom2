@@ -5,9 +5,11 @@ version: 2
 
 # Set the OS, Python version and other tools you might need
 build:
-  os: ubuntu-22.04
+  os: ubuntu-24.04
   tools:
-    python: "3.11"
+    python: "3.12"
+  apt_packages:
+    - pandoc
 
 # Build documentation in the "doc/" directory with Sphinx
 sphinx:
@@ -22,10 +24,5 @@ formats:
 # Python requirements for building documentation
 python:
   install:
-    # Install the package itself
-    - method: pip
-      path: .
-      extra_requirements:
-        - docs
     # Install additional requirements for building docs
     - requirements: doc/requirements.txt
