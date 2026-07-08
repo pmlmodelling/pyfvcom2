@@ -3,11 +3,16 @@ from __future__ import annotations
 import os
 import numpy as np
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from pyfvcom2.fvcom_writer import FVCOMWriter
 
-from .version import full_version
+try:
+    from .version import full_version
+except ModuleNotFoundError as exc:
+    if exc.name != "pyfvcom2.version":
+        raise
+    full_version = "0.1.0.dev0+unknown"
 from .interpolation_coordinates import InterpolationCoordinates
 from .interpolation import Interpolator
 from .weights_calculator import get_weights_calculator
@@ -16,7 +21,9 @@ from .grid import find_connected_elements
 from .coordinates import sigma_to_z_coords
 from .ocean import zbar
 from .exceptions import PyFVCOM2ValueError
-from .tide import TideManager
+
+if TYPE_CHECKING:
+    from .tide import TideManager
 
 
 __all__ = ["GridBand", "Nest", "NestManager"]

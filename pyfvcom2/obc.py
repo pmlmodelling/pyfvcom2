@@ -3,13 +3,20 @@ from __future__ import annotations
 import os
 import numpy as np
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from .fvcom_writer import FVCOMWriter
-from .version import full_version
+try:
+    from .version import full_version
+except ModuleNotFoundError as exc:
+    if exc.name != "pyfvcom2.version":
+        raise
+    full_version = "0.1.0.dev0+unknown"
 from .grid import Grid
-from .tide import TideManager
 from .exceptions import PyFVCOM2ValueError
+
+if TYPE_CHECKING:
+    from .tide import TideManager
 
 
 __all__ = ["OBCManager"]

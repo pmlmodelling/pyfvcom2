@@ -4,9 +4,61 @@ import numpy as np
 from netCDF4 import Dataset, stringtochar
 from datetime import datetime
 import subprocess
-from typing import Optional
+from typing import Optional, Sequence
 
-__all__ = ["write_restart"]
+__all__ = ["interpolate_restart_data", "write_restart"]
+
+
+def interpolate_restart_data(
+    fvcom_reader,
+    interpolator,
+    variables: Sequence[str],
+    target_datetime: datetime,
+) -> dict:
+    """Interpolate source data onto an FVCOM restart grid.
+
+    This prepares the ``data`` dictionary consumed by :func:`write_restart`.
+    The supplied interpolator can be a :class:`NEMOInterpolator`,
+    :class:`CMEMSInterpolator` or any object implementing the pyfvcom2
+    ``Interpolator`` interface.
+
+    Args:
+        fvcom_reader: :class:`pyfvcom2.fvcom_reader.FVCOMReader` for the
+            restart template/grid.
+        interpolator: Interpolator instance used to produce each variable.
+        variables: FVCOM restart variable names to interpolate.
+        target_datetime: Datetime to use for interpolation.
+
+    Returns:
+        Dictionary of variable name to restart-shaped arrays, without the
+        leading FVCOM time dimension.
+    """
+    restart_data = {}
+    dates = np.array([target_datetime])
+
+    for variable in variables:
+        horizontal_position = (
+            "node" if fvcom_reader.var_is_node_based(variable) else "element"
+        )
+        vertical_position = fvcom_reader.get_vertical_position(variable)
+        if vertical_position is None:
+            vertical_position = "layer_centre"
+
+        coordinates = fvcom_reader.get_interpolation_coordinates(
+            horizontal_position,
+            vertical_position,
+            horizontal_coordinate_system="geographic",
+            vertical_coordinate_system="z",
+            dates=dates,
+        )
+        interpolated = interpolator.interpolate(coordinates, variable)
+
+        if interpolated.ndim > 0 and interpolated.shape[0] == 1:
+            interpolated = interpolated[0, ...]
+
+        restart_data[variable] = interpolated
+
+    return restart_data
 
 
 def write_restart(

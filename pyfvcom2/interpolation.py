@@ -3,7 +3,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from scipy import interpolate
-from scipy.spatial import Delaunay
+from scipy.spatial import Delaunay, QhullError
 from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 from matplotlib.tri import Triangulation, LinearTriInterpolator
 from typing import Optional
@@ -13,9 +13,17 @@ from .coordinates import sigma_to_z_coords, pol2cart, cart2pol
 from .exceptions import PyFVCOM2ValueError
 from .fvcom_reader import FVCOMReader
 from .interpolation_coordinates import InterpolationCoordinates
+from .nemo_reader import NEMOReader, default_fvcom_to_nemo_var_names
 from .tide_reader import HarmonicsData
 
-__all__ = ["InterpolationCoordinates", "Interpolator", "CMEMSInterpolator", "FVCOMInterpolator", "TPXOInterpolator"]
+__all__ = [
+    "InterpolationCoordinates",
+    "Interpolator",
+    "CMEMSInterpolator",
+    "NEMOInterpolator",
+    "FVCOMInterpolator",
+    "TPXOInterpolator",
+]
 
 
 class Interpolator(ABC):
@@ -212,6 +220,397 @@ class CMEMSInterpolator(Interpolator):
             
             interpolated_data[d_idx, :, :] = var_on_fvcom_grid
         
+        return interpolated_data
+
+
+class NEMOInterpolator(Interpolator):
+    """NEMO interpolator for native-grid fields.
+
+    Supports scalar 2D and 3D variables on curvilinear geographic grids. NEMO
+    U/V velocities are interpolated from their native staggered grids and
+    rotated onto east/north components before being returned as FVCOM ``u`` and
+    ``v``.
+
+    Args:
+        nemo_reader: A :class:`NEMOReader` instance with one or more grid file
+            groups loaded.
+        fvcom_to_nemo_var_names: Mapping from FVCOM names to NEMO variable
+            names. Defaults to temperature, salinity, sea-surface height and
+            velocity mappings.
+    """
+
+    def __init__(
+        self,
+        nemo_reader: NEMOReader,
+        fvcom_to_nemo_var_names: Optional[dict] = None,
+    ):
+        super().__init__()
+
+        self.nemo_reader = nemo_reader
+
+        if fvcom_to_nemo_var_names is None:
+            self.fvcom_to_nemo_var_names = default_fvcom_to_nemo_var_names
+        else:
+            self.fvcom_to_nemo_var_names = fvcom_to_nemo_var_names
+
+    @staticmethod
+    def _as_date_list(dates):
+        try:
+            len(dates)
+            return dates
+        except TypeError:
+            return [dates]
+
+    @staticmethod
+    def _filled_curvilinear_interpolation(
+        source_lons: np.ndarray,
+        source_lats: np.ndarray,
+        source_data: np.ndarray,
+        target_lons: np.ndarray,
+        target_lats: np.ndarray,
+    ) -> np.ndarray:
+        """Interpolate one curvilinear source layer onto target points."""
+        source_lons = np.asarray(source_lons)
+        source_lats = np.asarray(source_lats)
+        source_data = np.asarray(source_data)
+
+        valid_mask = (
+            np.isfinite(source_lons)
+            & np.isfinite(source_lats)
+            & np.isfinite(source_data)
+        )
+
+        if not np.any(valid_mask):
+            raise PyFVCOM2ValueError(
+                "Cannot interpolate NEMO data because the source layer has no "
+                "finite values."
+            )
+
+        source_points = np.column_stack(
+            (source_lons[valid_mask].ravel(), source_lats[valid_mask].ravel())
+        )
+        source_values = source_data[valid_mask].ravel()
+        target_points = np.column_stack((target_lons, target_lats))
+
+        if len(source_values) >= 3:
+            try:
+                interpolator = LinearNDInterpolator(source_points, source_values)
+                interpolated = interpolator(target_points)
+            except QhullError:
+                nearest = NearestNDInterpolator(source_points, source_values)
+                return nearest(target_points)
+        else:
+            nearest = NearestNDInterpolator(source_points, source_values)
+            return nearest(target_points)
+
+        nan_mask = np.isnan(interpolated)
+        if np.any(nan_mask):
+            nearest = NearestNDInterpolator(source_points, source_values)
+            interpolated[nan_mask] = nearest(target_points[nan_mask])
+
+        return interpolated
+
+    def _get_time_interpolated_var(
+        self,
+        nemo_var_name: str,
+        target_date,
+        grid: str,
+    ) -> np.ndarray:
+        """Read a NEMO variable with linear temporal interpolation."""
+        t0, t1, alpha = self.nemo_reader.get_bracketing_times(target_date, grid)
+
+        data_0 = self.nemo_reader.get_var(nemo_var_name, t0, grid=grid)
+        if alpha == 0.0:
+            return data_0
+
+        data_1 = self.nemo_reader.get_var(nemo_var_name, t1, grid=grid)
+        return (1.0 - alpha) * data_0 + alpha * data_1
+
+    def _get_time_interpolated_vertical_coordinates(
+        self,
+        nemo_var_name: str,
+        target_date,
+        grid: str,
+    ) -> np.ndarray:
+        """Read NEMO z coordinates with linear temporal interpolation."""
+        t0, t1, alpha = self.nemo_reader.get_bracketing_times(target_date, grid)
+
+        z_0 = self.nemo_reader.get_vertical_coordinates(
+            nemo_var_name,
+            target_datetime=t0,
+            grid=grid,
+            positive_down=False,
+        )
+        if alpha == 0.0:
+            return z_0
+
+        z_1 = self.nemo_reader.get_vertical_coordinates(
+            nemo_var_name,
+            target_datetime=t1,
+            grid=grid,
+            positive_down=False,
+        )
+        return (1.0 - alpha) * z_0 + alpha * z_1
+
+    def interpolate(
+        self,
+        coordinates: InterpolationCoordinates,
+        fvcom_var_name: str,
+    ) -> np.ndarray:
+        """Interpolate a NEMO variable onto supplied FVCOM coordinates."""
+        if coordinates.horizontal_coordinate_system != "geographic":
+            raise PyFVCOM2ValueError(
+                "NEMOInterpolator currently requires geographic target "
+                "coordinates."
+            )
+
+        nemo_var_name = self.fvcom_to_nemo_var_names.get(fvcom_var_name)
+        if nemo_var_name is None:
+            raise PyFVCOM2ValueError(
+                f"No NEMO variable mapping found for FVCOM variable "
+                f"'{fvcom_var_name}'. Available mappings: "
+                f"{self.fvcom_to_nemo_var_names}"
+            )
+
+        if fvcom_var_name in ("u", "v"):
+            return self._interpolate_velocity(coordinates, fvcom_var_name)
+
+        grid = self.nemo_reader.grid_for_variable(nemo_var_name)
+        var_ndims = self.nemo_reader.get_var_ndims(nemo_var_name, grid=grid)
+
+        print(f"Interpolating NEMO {nemo_var_name} to FVCOM grid.")
+
+        if var_ndims == 2:
+            return self._interpolate_2d_static(coordinates, nemo_var_name, grid)
+        elif var_ndims == 3:
+            return self._interpolate_2d(coordinates, nemo_var_name, grid)
+        elif var_ndims == 4:
+            return self._interpolate_3d(coordinates, nemo_var_name, grid)
+
+        raise PyFVCOM2ValueError(
+            f"Unsupported NEMO variable dimensions for {nemo_var_name}: "
+            f"{var_ndims}"
+        )
+
+    def _interpolate_2d_static(
+        self,
+        coordinates: InterpolationCoordinates,
+        nemo_var_name: str,
+        grid: str,
+    ) -> np.ndarray:
+        n_points = len(coordinates.x1)
+        interpolated_data = np.empty((n_points), dtype=np.float32)
+
+        var_data = self.nemo_reader.get_var(nemo_var_name, grid=grid)
+        interpolated_data[:] = self._filled_curvilinear_interpolation(
+            self.nemo_reader.lons_for_variable(nemo_var_name, grid),
+            self.nemo_reader.lats_for_variable(nemo_var_name, grid),
+            var_data,
+            coordinates.x1,
+            coordinates.x2,
+        )
+
+        return interpolated_data
+
+    def _interpolate_velocity(
+        self,
+        coordinates: InterpolationCoordinates,
+        fvcom_var_name: str,
+    ) -> np.ndarray:
+        """Interpolate native NEMO U/V and rotate to east/north components."""
+        u_var_name = self.fvcom_to_nemo_var_names.get("u")
+        v_var_name = self.fvcom_to_nemo_var_names.get("v")
+        if u_var_name is None or v_var_name is None:
+            raise PyFVCOM2ValueError(
+                "NEMO velocity interpolation requires mappings for both "
+                "'u' and 'v'."
+            )
+
+        u_grid = self.nemo_reader.grid_for_variable(u_var_name)
+        v_grid = self.nemo_reader.grid_for_variable(v_var_name)
+
+        print(f"Interpolating and rotating NEMO {u_var_name}/{v_var_name}.")
+
+        native_u = self._interpolate_3d(coordinates, u_var_name, u_grid)
+        native_v = self._interpolate_3d(coordinates, v_var_name, v_grid)
+
+        angle_grid = "T" if "T" in self.nemo_reader.grid_names else u_grid
+        grid_angle = self.nemo_reader.grid_angle(angle_grid)
+        cos_angle = self._filled_curvilinear_interpolation(
+            self.nemo_reader.lons(angle_grid),
+            self.nemo_reader.lats(angle_grid),
+            np.cos(grid_angle),
+            coordinates.x1,
+            coordinates.x2,
+        )
+        sin_angle = self._filled_curvilinear_interpolation(
+            self.nemo_reader.lons(angle_grid),
+            self.nemo_reader.lats(angle_grid),
+            np.sin(grid_angle),
+            coordinates.x1,
+            coordinates.x2,
+        )
+        vector_length = np.hypot(cos_angle, sin_angle)
+        valid_angle = vector_length > 0.0
+        cos_angle[valid_angle] = cos_angle[valid_angle] / vector_length[valid_angle]
+        sin_angle[valid_angle] = sin_angle[valid_angle] / vector_length[valid_angle]
+
+        if fvcom_var_name == "u":
+            return (
+                native_u * cos_angle[np.newaxis, np.newaxis, :]
+                - native_v * sin_angle[np.newaxis, np.newaxis, :]
+            )
+
+        return (
+            native_u * sin_angle[np.newaxis, np.newaxis, :]
+            + native_v * cos_angle[np.newaxis, np.newaxis, :]
+        )
+
+    def _interpolate_2d(
+        self,
+        coordinates: InterpolationCoordinates,
+        nemo_var_name: str,
+        grid: str,
+    ) -> np.ndarray:
+        dates = self._as_date_list(coordinates.dates)
+        n_dates = len(dates)
+        n_points = len(coordinates.x1)
+
+        interpolated_data = np.empty((n_dates, n_points), dtype=np.float32)
+
+        for d_idx, target_date in enumerate(dates):
+            print(
+                f"Interpolating NEMO {nemo_var_name} to FVCOM grid for "
+                f"date: {target_date}."
+            )
+
+            var_data = self._get_time_interpolated_var(
+                nemo_var_name, target_date, grid
+            )
+            interpolated_data[d_idx, :] = self._filled_curvilinear_interpolation(
+                self.nemo_reader.lons_for_variable(nemo_var_name, grid),
+                self.nemo_reader.lats_for_variable(nemo_var_name, grid),
+                var_data,
+                coordinates.x1,
+                coordinates.x2,
+            )
+
+        return interpolated_data
+
+    def _interpolate_3d(
+        self,
+        coordinates: InterpolationCoordinates,
+        nemo_var_name: str,
+        grid: str,
+    ) -> np.ndarray:
+        if coordinates.vertical_coordinate_system != "z":
+            raise PyFVCOM2ValueError(
+                "NEMOInterpolator currently requires z target coordinates for "
+                "3D variables."
+            )
+
+        dates = self._as_date_list(coordinates.dates)
+        n_dates = len(dates)
+        n_depths = coordinates.x3.shape[0]
+        n_points = coordinates.x1.shape[0]
+
+        interpolated_data = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
+
+        for d_idx, target_date in enumerate(dates):
+            print(
+                f"Interpolating NEMO {nemo_var_name} to FVCOM grid for "
+                f"date: {target_date}."
+            )
+
+            var_data = self._get_time_interpolated_var(
+                nemo_var_name, target_date, grid
+            )
+            z_data = self._get_time_interpolated_vertical_coordinates(
+                nemo_var_name, target_date, grid
+            )
+
+            var_on_horizontal_grid = np.empty(
+                (z_data.shape[0], n_points), dtype=np.float32
+            )
+            depth_on_horizontal_grid = np.empty(
+                (z_data.shape[0], n_points), dtype=np.float32
+            )
+            for depth_index in range(z_data.shape[0]):
+                layer_data = var_data[depth_index, :, :]
+                if not np.any(np.isfinite(layer_data)):
+                    var_on_horizontal_grid[depth_index, :] = np.nan
+                    depth_on_horizontal_grid[depth_index, :] = np.nan
+                    continue
+
+                layer_depths = np.where(
+                    np.isfinite(layer_data),
+                    z_data[depth_index, :, :],
+                    np.nan,
+                )
+                var_on_horizontal_grid[depth_index, :] = (
+                    self._filled_curvilinear_interpolation(
+                        self.nemo_reader.lons_for_variable(nemo_var_name, grid),
+                        self.nemo_reader.lats_for_variable(nemo_var_name, grid),
+                        layer_data,
+                        coordinates.x1,
+                        coordinates.x2,
+                    )
+                )
+                depth_on_horizontal_grid[depth_index, :] = (
+                    self._filled_curvilinear_interpolation(
+                        self.nemo_reader.lons_for_variable(nemo_var_name, grid),
+                        self.nemo_reader.lats_for_variable(nemo_var_name, grid),
+                        layer_depths,
+                        coordinates.x1,
+                        coordinates.x2,
+                    )
+                )
+
+            var_on_target_grid = np.empty((n_depths, n_points), dtype=np.float32)
+            for point_index in range(n_points):
+                source_depths = depth_on_horizontal_grid[:, point_index]
+                source_values = var_on_horizontal_grid[:, point_index]
+                valid_profile = np.isfinite(source_depths) & np.isfinite(source_values)
+
+                if not np.any(valid_profile):
+                    var_on_target_grid[:, point_index] = np.nan
+                    continue
+
+                if np.count_nonzero(valid_profile) == 1:
+                    var_on_target_grid[:, point_index] = source_values[valid_profile][0]
+                    continue
+
+                source_depths = source_depths[valid_profile]
+                source_values = source_values[valid_profile]
+                sort_index = np.argsort(source_depths)
+                source_depths = source_depths[sort_index]
+                source_values = source_values[sort_index]
+                source_depths, unique_index = np.unique(
+                    source_depths,
+                    return_index=True,
+                )
+                source_values = source_values[unique_index]
+
+                if len(source_depths) == 1:
+                    var_on_target_grid[:, point_index] = source_values[0]
+                    continue
+
+                target_depths = np.clip(
+                    coordinates.x3[:, point_index],
+                    source_depths[0],
+                    source_depths[-1],
+                )
+
+                vertical_interp = interpolate.interp1d(
+                    source_depths,
+                    source_values,
+                    kind="linear",
+                    bounds_error=False,
+                )
+                var_on_target_grid[:, point_index] = vertical_interp(target_depths)
+
+            interpolated_data[d_idx, :, :] = var_on_target_grid
+
         return interpolated_data
 
 
@@ -827,4 +1226,3 @@ class TPXOInterpolator(Interpolator):
         harmonics_component_2 = harmonics_component_2[:, sort_idx, :]
 
         return harmonics_lon, harmonics_component_1, harmonics_component_2
-

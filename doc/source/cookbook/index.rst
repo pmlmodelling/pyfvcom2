@@ -17,6 +17,7 @@ In the cookbook, you can find hints and tips for working with PyFVCOM2.
     interpolate_fvcom_data
     predict_tides_and_adjust_nest_forcing
     generate_nest_forcing_file_from_cmems_data
+    generate_nest_forcing_file_from_nemo_data
     tidal_harmonic_analysis_tide_gauge
     apply_ramp_demonstration
     bathymetry_smoothing

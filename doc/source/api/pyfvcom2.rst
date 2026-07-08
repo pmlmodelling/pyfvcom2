@@ -30,6 +30,7 @@ Submodules
    pyfvcom2.lanczos
    pyfvcom2.mesh_reader
    pyfvcom2.namelist
+   pyfvcom2.nemo_reader
    pyfvcom2.nest
    pyfvcom2.obc
    pyfvcom2.ocean
