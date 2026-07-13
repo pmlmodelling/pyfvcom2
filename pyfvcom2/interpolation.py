@@ -247,11 +247,30 @@ class NEMOInterpolator(Interpolator):
         super().__init__()
 
         self.nemo_reader = nemo_reader
+        self._tri_cache: dict = {}  # cache Delaunay triangulations keyed by (grid id, mask hash)
+        self._velocity_cache: dict = {}  # cache rotated (u, v) pair keyed by target coord hash
+        self._var_read_cache: dict = {}  # cache raw NEMO field reads keyed by (var, time, grid)
+        self._z_read_cache: dict = {}    # cache raw NEMO z-coord reads keyed by (var, time, grid)
 
         if fvcom_to_nemo_var_names is None:
             self.fvcom_to_nemo_var_names = default_fvcom_to_nemo_var_names
         else:
             self.fvcom_to_nemo_var_names = fvcom_to_nemo_var_names
+
+    def _resolve_nemo_var_name(self, candidates):
+        """Return the first available NEMO variable name from a string or tuple of candidates."""
+        if isinstance(candidates, str):
+            return candidates
+        for candidate in candidates:
+            try:
+                self.nemo_reader.grid_for_variable(candidate)
+                return candidate
+            except PyFVCOM2ValueError:
+                continue
+        raise PyFVCOM2ValueError(
+            f"None of the candidate NEMO variable names {list(candidates)} "
+            "were found in the supplied files"
+        )
 
     @staticmethod
     def _as_date_list(dates):
@@ -261,15 +280,20 @@ class NEMOInterpolator(Interpolator):
         except TypeError:
             return [dates]
 
-    @staticmethod
     def _filled_curvilinear_interpolation(
+        self,
         source_lons: np.ndarray,
         source_lats: np.ndarray,
         source_data: np.ndarray,
         target_lons: np.ndarray,
         target_lats: np.ndarray,
     ) -> np.ndarray:
-        """Interpolate one curvilinear source layer onto target points."""
+        """Interpolate one curvilinear source layer onto target points.
+
+        Delaunay triangulations are cached on the first call for each unique
+        (source grid, valid-mask) combination and reused on subsequent calls,
+        avoiding the dominant O(n log n) triangulation cost across time steps.
+        """
         source_lons = np.asarray(source_lons)
         source_lats = np.asarray(source_lats)
         source_data = np.asarray(source_data)
@@ -294,7 +318,13 @@ class NEMOInterpolator(Interpolator):
 
         if len(source_values) >= 3:
             try:
-                interpolator = LinearNDInterpolator(source_points, source_values)
+                # Build the Delaunay triangulation once per unique (grid, mask)
+                # combination and reuse it for subsequent time steps / depth levels.
+                cache_key = (id(source_lons), hash(valid_mask.tobytes()))
+                if cache_key not in self._tri_cache:
+                    self._tri_cache[cache_key] = Delaunay(source_points)
+                tri = self._tri_cache[cache_key]
+                interpolator = LinearNDInterpolator(tri, source_values)
                 interpolated = interpolator(target_points)
             except QhullError:
                 nearest = NearestNDInterpolator(source_points, source_values)
@@ -316,14 +346,27 @@ class NEMOInterpolator(Interpolator):
         target_date,
         grid: str,
     ) -> np.ndarray:
-        """Read a NEMO variable with linear temporal interpolation."""
+        """Read a NEMO variable with linear temporal interpolation.
+
+        Raw reads from the NEMO files are cached so that all hourly output
+        steps bracketed by the same pair of daily records only trigger two
+        file reads in total rather than two per time step.
+        """
         t0, t1, alpha = self.nemo_reader.get_bracketing_times(target_date, grid)
 
-        data_0 = self.nemo_reader.get_var(nemo_var_name, t0, grid=grid)
+        key_0 = (nemo_var_name, t0, grid)
+        if key_0 not in self._var_read_cache:
+            self._var_read_cache[key_0] = self.nemo_reader.get_var(nemo_var_name, t0, grid=grid)
+        data_0 = self._var_read_cache[key_0]
+
         if alpha == 0.0:
             return data_0
 
-        data_1 = self.nemo_reader.get_var(nemo_var_name, t1, grid=grid)
+        key_1 = (nemo_var_name, t1, grid)
+        if key_1 not in self._var_read_cache:
+            self._var_read_cache[key_1] = self.nemo_reader.get_var(nemo_var_name, t1, grid=grid)
+        data_1 = self._var_read_cache[key_1]
+
         return (1.0 - alpha) * data_0 + alpha * data_1
 
     def _get_time_interpolated_vertical_coordinates(
@@ -332,24 +375,35 @@ class NEMOInterpolator(Interpolator):
         target_date,
         grid: str,
     ) -> np.ndarray:
-        """Read NEMO z coordinates with linear temporal interpolation."""
+        """Read NEMO z coordinates with linear temporal interpolation.
+
+        Raw reads are cached for the same reason as _get_time_interpolated_var.
+        """
         t0, t1, alpha = self.nemo_reader.get_bracketing_times(target_date, grid)
 
-        z_0 = self.nemo_reader.get_vertical_coordinates(
-            nemo_var_name,
-            target_datetime=t0,
-            grid=grid,
-            positive_down=False,
-        )
+        key_0 = (nemo_var_name, t0, grid)
+        if key_0 not in self._z_read_cache:
+            self._z_read_cache[key_0] = self.nemo_reader.get_vertical_coordinates(
+                nemo_var_name,
+                target_datetime=t0,
+                grid=grid,
+                positive_down=False,
+            )
+        z_0 = self._z_read_cache[key_0]
+
         if alpha == 0.0:
             return z_0
 
-        z_1 = self.nemo_reader.get_vertical_coordinates(
-            nemo_var_name,
-            target_datetime=t1,
-            grid=grid,
-            positive_down=False,
-        )
+        key_1 = (nemo_var_name, t1, grid)
+        if key_1 not in self._z_read_cache:
+            self._z_read_cache[key_1] = self.nemo_reader.get_vertical_coordinates(
+                nemo_var_name,
+                target_datetime=t1,
+                grid=grid,
+                positive_down=False,
+            )
+        z_1 = self._z_read_cache[key_1]
+
         return (1.0 - alpha) * z_0 + alpha * z_1
 
     def interpolate(
@@ -364,8 +418,8 @@ class NEMOInterpolator(Interpolator):
                 "coordinates."
             )
 
-        nemo_var_name = self.fvcom_to_nemo_var_names.get(fvcom_var_name)
-        if nemo_var_name is None:
+        candidates = self.fvcom_to_nemo_var_names.get(fvcom_var_name)
+        if candidates is None:
             raise PyFVCOM2ValueError(
                 f"No NEMO variable mapping found for FVCOM variable "
                 f"'{fvcom_var_name}'. Available mappings: "
@@ -375,6 +429,7 @@ class NEMOInterpolator(Interpolator):
         if fvcom_var_name in ("u", "v"):
             return self._interpolate_velocity(coordinates, fvcom_var_name)
 
+        nemo_var_name = self._resolve_nemo_var_name(candidates)
         grid = self.nemo_reader.grid_for_variable(nemo_var_name)
         var_ndims = self.nemo_reader.get_var_ndims(nemo_var_name, grid=grid)
 
@@ -417,54 +472,70 @@ class NEMOInterpolator(Interpolator):
         coordinates: InterpolationCoordinates,
         fvcom_var_name: str,
     ) -> np.ndarray:
-        """Interpolate native NEMO U/V and rotate to east/north components."""
-        u_var_name = self.fvcom_to_nemo_var_names.get("u")
-        v_var_name = self.fvcom_to_nemo_var_names.get("v")
-        if u_var_name is None or v_var_name is None:
+        """Interpolate native NEMO U/V and rotate to east/north components.
+
+        Both rotated components are computed together on the first call and
+        cached so that the second call (for the other component) is free.
+        """
+        u_candidates = self.fvcom_to_nemo_var_names.get("u")
+        v_candidates = self.fvcom_to_nemo_var_names.get("v")
+        if u_candidates is None or v_candidates is None:
             raise PyFVCOM2ValueError(
                 "NEMO velocity interpolation requires mappings for both "
                 "'u' and 'v'."
             )
+        u_var_name = self._resolve_nemo_var_name(u_candidates)
+        v_var_name = self._resolve_nemo_var_name(v_candidates)
 
         u_grid = self.nemo_reader.grid_for_variable(u_var_name)
         v_grid = self.nemo_reader.grid_for_variable(v_var_name)
 
-        print(f"Interpolating and rotating NEMO {u_var_name}/{v_var_name}.")
-
-        native_u = self._interpolate_3d(coordinates, u_var_name, u_grid)
-        native_v = self._interpolate_3d(coordinates, v_var_name, v_grid)
-
-        angle_grid = "T" if "T" in self.nemo_reader.grid_names else u_grid
-        grid_angle = self.nemo_reader.grid_angle(angle_grid)
-        cos_angle = self._filled_curvilinear_interpolation(
-            self.nemo_reader.lons(angle_grid),
-            self.nemo_reader.lats(angle_grid),
-            np.cos(grid_angle),
-            coordinates.x1,
-            coordinates.x2,
+        # Cache key based on target horizontal coordinates so both u and v
+        # share the same cache entry when called with identical nest positions.
+        coord_key = (
+            hash(np.asarray(coordinates.x1).tobytes()),
+            hash(np.asarray(coordinates.x2).tobytes()),
         )
-        sin_angle = self._filled_curvilinear_interpolation(
-            self.nemo_reader.lons(angle_grid),
-            self.nemo_reader.lats(angle_grid),
-            np.sin(grid_angle),
-            coordinates.x1,
-            coordinates.x2,
-        )
-        vector_length = np.hypot(cos_angle, sin_angle)
-        valid_angle = vector_length > 0.0
-        cos_angle[valid_angle] = cos_angle[valid_angle] / vector_length[valid_angle]
-        sin_angle[valid_angle] = sin_angle[valid_angle] / vector_length[valid_angle]
 
-        if fvcom_var_name == "u":
-            return (
+        if coord_key not in self._velocity_cache:
+            print(f"Interpolating and rotating NEMO {u_var_name}/{v_var_name}.")
+
+            native_u = self._interpolate_3d(coordinates, u_var_name, u_grid)
+            native_v = self._interpolate_3d(coordinates, v_var_name, v_grid)
+
+            angle_grid = "T" if "T" in self.nemo_reader.grid_names else u_grid
+            grid_angle = self.nemo_reader.grid_angle(angle_grid)
+            cos_angle = self._filled_curvilinear_interpolation(
+                self.nemo_reader.lons(angle_grid),
+                self.nemo_reader.lats(angle_grid),
+                np.cos(grid_angle),
+                coordinates.x1,
+                coordinates.x2,
+            )
+            sin_angle = self._filled_curvilinear_interpolation(
+                self.nemo_reader.lons(angle_grid),
+                self.nemo_reader.lats(angle_grid),
+                np.sin(grid_angle),
+                coordinates.x1,
+                coordinates.x2,
+            )
+            vector_length = np.hypot(cos_angle, sin_angle)
+            valid_angle = vector_length > 0.0
+            cos_angle[valid_angle] = cos_angle[valid_angle] / vector_length[valid_angle]
+            sin_angle[valid_angle] = sin_angle[valid_angle] / vector_length[valid_angle]
+
+            rotated_u = (
                 native_u * cos_angle[np.newaxis, np.newaxis, :]
                 - native_v * sin_angle[np.newaxis, np.newaxis, :]
             )
+            rotated_v = (
+                native_u * sin_angle[np.newaxis, np.newaxis, :]
+                + native_v * cos_angle[np.newaxis, np.newaxis, :]
+            )
+            self._velocity_cache[coord_key] = (rotated_u, rotated_v)
 
-        return (
-            native_u * sin_angle[np.newaxis, np.newaxis, :]
-            + native_v * cos_angle[np.newaxis, np.newaxis, :]
-        )
+        rotated_u, rotated_v = self._velocity_cache[coord_key]
+        return rotated_u if fvcom_var_name == "u" else rotated_v
 
     def _interpolate_2d(
         self,
@@ -503,6 +574,23 @@ class NEMOInterpolator(Interpolator):
         nemo_var_name: str,
         grid: str,
     ) -> np.ndarray:
+        """Interpolate a 3-D NEMO variable onto FVCOM sigma coordinates.
+
+        Performance notes
+        -----------------
+        * Source-grid lons/lats are extracted once outside the time loop.
+        * ``depth_on_horizontal_grid`` (the horizontal projection of NEMO z
+          coordinates onto the nest points) is computed only once per unique
+          (t0, t1) bracket.  For fixed z-level grids (e.g. AMM7) all time
+          steps share a single bracket, so the 45-depth × n_points horizontal
+          interpolation of depths is done exactly once rather than 25 times.
+        * Per-point vertical-interpolation geometry (valid-depth mask, sort
+          order, unique-depth indices, clipped target depths) is built once
+          from the first depth computation and reused for every subsequent
+          time step; only the interpolated values change.
+        * ``scipy.interpolate.interp1d`` (Python-object overhead per call) is
+          replaced by ``np.interp`` (pure-C, no construction cost).
+        """
         if coordinates.vertical_coordinate_system != "z":
             raise PyFVCOM2ValueError(
                 "NEMOInterpolator currently requires z target coordinates for "
@@ -516,6 +604,23 @@ class NEMOInterpolator(Interpolator):
 
         interpolated_data = np.empty((n_dates, n_depths, n_points), dtype=np.float32)
 
+        # Source grid is constant across time steps — extract once.
+        src_lons = self.nemo_reader.lons_for_variable(nemo_var_name, grid)
+        src_lats = self.nemo_reader.lats_for_variable(nemo_var_name, grid)
+
+        # depth_on_horizontal_grid cache: keyed by (t0, t1) bracket.
+        # For fixed z-level grids the NEMO depth coordinate is the same for
+        # every time step, so we only compute this once per bracket.
+        _depth_hgrid: dict = {}
+
+        # Per-point vertical interpolation parameters built from the depth
+        # profile the first time depth_on_horizontal_grid is available.
+        # Each entry is None (no valid data) or a tuple
+        #   ('const', value)  — single valid depth, return constant
+        #   ('interp', valid_mask, sort_idx, uniq_idx, sd_unique, td)
+        _vert_params: list | None = None
+        _vert_params_bracket: tuple | None = None  # (t0, t1) that built _vert_params
+
         for d_idx, target_date in enumerate(dates):
             print(
                 f"Interpolating NEMO {nemo_var_name} to FVCOM grid for "
@@ -528,86 +633,125 @@ class NEMOInterpolator(Interpolator):
             z_data = self._get_time_interpolated_vertical_coordinates(
                 nemo_var_name, target_date, grid
             )
+            n_nemo_depths = z_data.shape[0]
 
+            # ---- Horizontal interpolation of the variable (always fresh) ----
             var_on_horizontal_grid = np.empty(
-                (z_data.shape[0], n_points), dtype=np.float32
+                (n_nemo_depths, n_points), dtype=np.float32
             )
-            depth_on_horizontal_grid = np.empty(
-                (z_data.shape[0], n_points), dtype=np.float32
-            )
-            for depth_index in range(z_data.shape[0]):
+            for depth_index in range(n_nemo_depths):
                 layer_data = var_data[depth_index, :, :]
                 if not np.any(np.isfinite(layer_data)):
                     var_on_horizontal_grid[depth_index, :] = np.nan
-                    depth_on_horizontal_grid[depth_index, :] = np.nan
                     continue
-
-                layer_depths = np.where(
-                    np.isfinite(layer_data),
-                    z_data[depth_index, :, :],
-                    np.nan,
-                )
                 var_on_horizontal_grid[depth_index, :] = (
                     self._filled_curvilinear_interpolation(
-                        self.nemo_reader.lons_for_variable(nemo_var_name, grid),
-                        self.nemo_reader.lats_for_variable(nemo_var_name, grid),
-                        layer_data,
-                        coordinates.x1,
-                        coordinates.x2,
-                    )
-                )
-                depth_on_horizontal_grid[depth_index, :] = (
-                    self._filled_curvilinear_interpolation(
-                        self.nemo_reader.lons_for_variable(nemo_var_name, grid),
-                        self.nemo_reader.lats_for_variable(nemo_var_name, grid),
-                        layer_depths,
-                        coordinates.x1,
-                        coordinates.x2,
+                        src_lons, src_lats, layer_data,
+                        coordinates.x1, coordinates.x2,
                     )
                 )
 
+            # ---- depth_on_horizontal_grid (cached per bracket) ----
+            t0, t1, _ = self.nemo_reader.get_bracketing_times(target_date, grid)
+            bracket = (t0, t1)
+
+            if bracket not in _depth_hgrid:
+                depth_on_horizontal_grid = np.empty(
+                    (n_nemo_depths, n_points), dtype=np.float32
+                )
+                for depth_index in range(n_nemo_depths):
+                    layer_data = var_data[depth_index, :, :]
+                    if not np.any(np.isfinite(layer_data)):
+                        depth_on_horizontal_grid[depth_index, :] = np.nan
+                        continue
+                    layer_depths = np.where(
+                        np.isfinite(layer_data),
+                        z_data[depth_index, :, :],
+                        np.nan,
+                    )
+                    depth_on_horizontal_grid[depth_index, :] = (
+                        self._filled_curvilinear_interpolation(
+                            src_lons, src_lats, layer_depths,
+                            coordinates.x1, coordinates.x2,
+                        )
+                    )
+
+                # Cache when z-levels are fixed: z_0 == z_1 (e.g. AMM7).
+                z0_key = (nemo_var_name, t0, grid)
+                z1_key = (nemo_var_name, t1, grid)
+                z_fixed = t0 == t1 or (
+                    z0_key in self._z_read_cache
+                    and z1_key in self._z_read_cache
+                    and np.array_equal(
+                        self._z_read_cache[z0_key],
+                        self._z_read_cache[z1_key],
+                    )
+                )
+                if z_fixed:
+                    _depth_hgrid[bracket] = depth_on_horizontal_grid
+
+                # Invalidate per-point params when the depth profile changes.
+                if bracket != _vert_params_bracket:
+                    _vert_params = None
+                    _vert_params_bracket = bracket
+            else:
+                depth_on_horizontal_grid = _depth_hgrid[bracket]
+
+            # ---- Vertical interpolation ----
             var_on_target_grid = np.empty((n_depths, n_points), dtype=np.float32)
-            for point_index in range(n_points):
-                source_depths = depth_on_horizontal_grid[:, point_index]
-                source_values = var_on_horizontal_grid[:, point_index]
-                valid_profile = np.isfinite(source_depths) & np.isfinite(source_values)
 
-                if not np.any(valid_profile):
-                    var_on_target_grid[:, point_index] = np.nan
-                    continue
+            if _vert_params is None:
+                # Build per-point geometry from current depth profile.
+                _vert_params = []
+                for point_index in range(n_points):
+                    sd = depth_on_horizontal_grid[:, point_index]
+                    sv = var_on_horizontal_grid[:, point_index]
+                    valid = np.isfinite(sd) & np.isfinite(sv)
 
-                if np.count_nonzero(valid_profile) == 1:
-                    var_on_target_grid[:, point_index] = source_values[valid_profile][0]
-                    continue
+                    if not np.any(valid):
+                        _vert_params.append(None)
+                        var_on_target_grid[:, point_index] = np.nan
+                        continue
 
-                source_depths = source_depths[valid_profile]
-                source_values = source_values[valid_profile]
-                sort_index = np.argsort(source_depths)
-                source_depths = source_depths[sort_index]
-                source_values = source_values[sort_index]
-                source_depths, unique_index = np.unique(
-                    source_depths,
-                    return_index=True,
-                )
-                source_values = source_values[unique_index]
+                    sd_v = sd[valid]
+                    sv_v = sv[valid]
+                    sort_idx = np.argsort(sd_v)
+                    sd_sorted = sd_v[sort_idx]
+                    sd_unique, uniq_idx = np.unique(sd_sorted, return_index=True)
 
-                if len(source_depths) == 1:
-                    var_on_target_grid[:, point_index] = source_values[0]
-                    continue
+                    if len(sd_unique) == 1:
+                        _vert_params.append(('const', valid, sort_idx, uniq_idx))
+                        var_on_target_grid[:, point_index] = sv_v[sort_idx][uniq_idx][0]
+                        continue
 
-                target_depths = np.clip(
-                    coordinates.x3[:, point_index],
-                    source_depths[0],
-                    source_depths[-1],
-                )
-
-                vertical_interp = interpolate.interp1d(
-                    source_depths,
-                    source_values,
-                    kind="linear",
-                    bounds_error=False,
-                )
-                var_on_target_grid[:, point_index] = vertical_interp(target_depths)
+                    td = np.clip(
+                        coordinates.x3[:, point_index],
+                        sd_unique[0],
+                        sd_unique[-1],
+                    )
+                    _vert_params.append(('interp', valid, sort_idx, uniq_idx, sd_unique, td))
+                    var_on_target_grid[:, point_index] = np.interp(
+                        td, sd_unique, sv_v[sort_idx][uniq_idx]
+                    )
+            else:
+                # Reuse cached geometry — only values change between time steps.
+                for point_index in range(n_points):
+                    p = _vert_params[point_index]
+                    if p is None:
+                        var_on_target_grid[:, point_index] = np.nan
+                        continue
+                    kind = p[0]
+                    valid, sort_idx, uniq_idx = p[1], p[2], p[3]
+                    sv_reindexed = (
+                        var_on_horizontal_grid[:, point_index][valid][sort_idx][uniq_idx]
+                    )
+                    if kind == 'const':
+                        var_on_target_grid[:, point_index] = sv_reindexed[0]
+                    else:
+                        sd_unique, td = p[4], p[5]
+                        var_on_target_grid[:, point_index] = np.interp(
+                            td, sd_unique, sv_reindexed
+                        )
 
             interpolated_data[d_idx, :, :] = var_on_target_grid
 

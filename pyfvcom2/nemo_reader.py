@@ -83,8 +83,8 @@ default_fvcom_to_nemo_var_names = {
     "temp": "votemper",
     "salinity": "vosaline",
     "zeta": "sossheig",
-    "u": "uo",
-    "v": "vo",
+    "u": ("vozocrtx", "uo"),
+    "v": ("vomecrty", "vo"),
 }
 
 
