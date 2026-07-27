@@ -4,11 +4,12 @@
 # Core Sphinx packages
 sphinx>=3.0
 sphinx_rtd_theme>=0.5
+myst-parser
 
 # Sphinx extensions used in conf.py
+sphinx-autodoc2
 sphinx-copybutton
 nbsphinx
-sphinxext-opengraph
 
 # Scientific documentation extensions
 numpydoc
