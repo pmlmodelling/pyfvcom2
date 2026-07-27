@@ -185,7 +185,10 @@ class CMEMSReader:
             
             required_file_path, local_time_index = self._time_to_file_map[closest_time]
 
-        dataset = xr.open_dataset(required_file_path)
+        if hasattr(self, '_metadata_dataset') and self._metadata_dataset is not None and required_file_path == self.file_paths[0]:
+            dataset = self._metadata_dataset
+        else:
+            dataset = xr.open_dataset(required_file_path)
 
         return dataset, local_time_index
 
