@@ -1,5 +1,7 @@
 # PyFVCOM2
 
+[![Documentation Status](https://readthedocs.org/projects/pyfvcom2/badge/?version=latest)](https://pyfvcom2.readthedocs.io/en/latest/?badge=latest)
+
 A Python package for processing FVCOM (Finite Volume Community Ocean Model) data.
 
 ## Description
