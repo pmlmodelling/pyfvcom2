@@ -43,7 +43,7 @@ This project follows Python best practices:
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.txt](LICENSE.txt) file for details.
+This project is licensed under the MIT License - see the [LICENSE.txt](https://github.com/pmlmodelling/pyfvcom2/blob/main/LICENSE.txt) file for details.
 
 ## Contributing
 

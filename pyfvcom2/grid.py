@@ -707,26 +707,14 @@ def connectivity(p, t):
     methods using triangular meshes.
 
     Args:
-    p : np.ndarray
-        Nx2 array of nodes coordinates, [[x1, y1], [x2, y2], etc.]
-    t : np.ndarray
-        Mx3 array of triangles as indices, [[n11, n12, n13], [n21, n22, n23],
-        etc.]
+        p: Nx2 array of node coordinates, ``[[x1, y1], [x2, y2], ...]``.
+        t: Mx3 array of triangles as indices,
+            ``[[n11, n12, n13], [n21, n22, n23], ...]``.
 
     Returns:
-    e : np.ndarray
-        Kx2 array of unique mesh edges - [[n11, n12], [n21, n22], etc.]
-    te : np.ndarray
-        Mx3 array of triangles as indices into e, [[e11, e12, e13], [e21, e22,
-        e23], etc.]
-    e2t : np.ndarray
-        Kx2 array of triangle neighbours for unique mesh edges - [[t11, t12],
-        [t21, t22], etc]. Each row has two entries corresponding to the
-        triangle numbers associated with each edge in e. Boundary edges have
-        e2t[i, 1] = -1.
-    bnd : np.ndarray, bool
-        Nx1 logical array identifying boundary nodes. p[i, :] is a boundary
-        node if bnd[i] = True.
+        tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: Unique mesh
+        edges, triangle edge indices, edge-to-triangle neighbours, and a
+        logical array identifying boundary nodes.
 
     Notes:
     Python translation of the MATLAB MESH2D connectivity function by Darren
@@ -806,7 +794,7 @@ def connectivity(p, t):
 
 
 def find_connected_nodes(n, triangles):
-    """Return the IDs of the nodes surrounding node number `n'.
+    """Return the IDs of the nodes surrounding node number ``n``.
 
     Args:
     n : int
@@ -855,7 +843,7 @@ def find_connected_nodes(n, triangles):
 
 def find_connected_elements(n, triangles):
     """
-    Return the IDs of the elements connected to node number `n'.
+    Return the IDs of the elements connected to node number ``n``.
 
     Parameters
     ----------
