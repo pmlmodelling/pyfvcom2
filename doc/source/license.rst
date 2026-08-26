@@ -9,27 +9,14 @@ PyFVCOM2 is distributed under the MIT License.
 .. literalinclude:: ../../LICENSE.txt
    :language: text
 
-Third-Party Licenses
-====================
+Third-Party Dependencies
+========================
 
-PyFVCOM2 depends on several third-party packages, each with their own licenses:
-
-**Core Dependencies:**
-
-- **NumPy**: BSD-3-Clause License
-- **SciPy**: BSD-3-Clause License  
-- **NetCDF4**: MIT License
-- **xarray**: Apache License 2.0
-- **Matplotlib**: PSF-based License
-- **Cartopy**: LGPL-3.0 License
-
-**Development Dependencies:**
-
-- **pytest**: MIT License
-- **Black**: MIT License
-- **isort**: MIT License
-- **mypy**: MIT License
-- **Sphinx**: BSD-2-Clause License
+PyFVCOM2 uses third-party packages from the Python scientific computing and
+geospatial ecosystem. Runtime, development, and documentation dependencies are
+listed in ``pyproject.toml``, ``environment.yml``, and
+``doc/requirements.txt``. Those dependencies are distributed under their own
+license terms.
 
 Copyright Notice
 ================

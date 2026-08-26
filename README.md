@@ -19,9 +19,9 @@ Installation instructions are available in the
 
 ## Usage
 
-For first steps and worked examples, see the
-[Getting Started](https://pyfvcom2.readthedocs.io/en/latest/getting_started.html)
-page and the
+For first steps, see the
+[hosted documentation](https://pyfvcom2.readthedocs.io/en/latest/).
+Worked examples are available in the
 [Cookbook](https://pyfvcom2.readthedocs.io/en/latest/cookbook/index.html).
 
 ## Development
@@ -31,6 +31,9 @@ Development setup and source installation instructions are available in the
 
 The generated API reference is available in the
 [API documentation](https://pyfvcom2.readthedocs.io/en/latest/api.html).
+
+Please report bugs and request features through the
+[issue tracker](https://github.com/pmlmodelling/pyfvcom2/issues).
 
 ## License
 
@@ -45,4 +48,4 @@ The team welcomes contributions to the project. These include:
 - Preparing documentation.
 - [Financial donations](https://pml.ac.uk/support-us/#how) to help support the work of the core team.
 
-If you are planning a large change to the code, please contact the team to discuss this first.
+If you are planning a large change to the code, please open an issue first so it can be discussed.

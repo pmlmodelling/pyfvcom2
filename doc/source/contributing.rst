@@ -113,7 +113,6 @@ Types of Contributions
 - API documentation improvements
 - Tutorial and example development
 - User guide enhancements
-- Translation efforts
 
 **Other Contributions:**
 
