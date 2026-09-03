@@ -24,5 +24,9 @@ formats:
 # Python requirements for building documentation
 python:
   install:
-    # Install additional requirements for building docs
-    - requirements: doc/requirements.txt
+    # Install the package and the documentation dependencies declared in
+    # pyproject.toml.
+    - method: pip
+      path: .
+      extra_requirements:
+        - docs
