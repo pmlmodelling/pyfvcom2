@@ -38,12 +38,3 @@ Submodules
    pyfvcom2.tide
    pyfvcom2.tide_reader
    pyfvcom2.weights_calculator
-
-Module contents
----------------
-
-.. automodule:: pyfvcom2
-   :members:
-   :show-inheritance:
-   :undoc-members:
-   :no-index:

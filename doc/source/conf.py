@@ -1,4 +1,3 @@
-#!/usr/bin/env python2
 # -*- coding: utf-8 -*-
 #
 # PyFVCOM2 documentation build configuration file.
@@ -72,7 +71,7 @@ autodoc2_skip_module_regexes = [
 ]
 
 # Autodoc
-napoleon_google_docstring = False
+napoleon_google_docstring = True
 napoleon_use_ivar = True
 autodoc_mock_imports = [
     'cartopy',
@@ -140,13 +139,12 @@ language = 'en'
 # directories to ignore when looking for source files.
 # This patterns also effect to html_static_path and html_extra_path
 exclude_patterns = ['**.ipynb_checkpoints', 'apidocs/**']
-suppress_warnings = ['myst.xref_missing', 'docutils']
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
-todo_include_todos = True
+todo_include_todos = False
 
 # Google analytics
 googleanalytics_id = 'G-5045ZREHMB'

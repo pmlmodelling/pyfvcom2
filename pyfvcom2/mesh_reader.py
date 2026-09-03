@@ -120,7 +120,7 @@ def read_sms_mesh(mesh: str, nodestrings: Optional[bool] = False) -> MeshData:
         MeshData: Named tuple containing:
             - triangle (np.ndarray): Integer array of shape (nele, 3). Each triangle is composed of
               three points and this contains the three node numbers (stored in
-              nodes) which refer to the coordinates in `x' and `y' (see below). Values
+              nodes) which refer to the coordinates in ``x`` and ``y`` (see below). Values
               are python-indexed.
             - nodes (np.ndarray): Integer number assigned to each node.
             - X (np.ndarray): X coordinates of each grid node.
@@ -217,9 +217,11 @@ def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None, depth_filenam
             name should also contain '_grd' in the name e.g. 'my_file_grd.dat'.
             The file contains information about the triangle indicies and the
             x, y, z coodinates of the grid nodes.
-            The file header should be two lines:
+            The file header should be two lines::
+
                 Node Number = nnn
                 Cell Number = eee
+
             Followed by 'element_index, tri1, tri2, tri3' for eee cells
             Followed by 'node_index, x, y, z' for nnn nodes
         obc_filename (str, optional): Full path to the FVCOM OBC file. This is
@@ -231,7 +233,7 @@ def read_fvcom_mesh(mesh: str, obc_filename: Optional[str] = None, depth_filenam
         MeshData: Named tuple containing:
             - triangle (np.ndarray): Integer array of shape (ntri, 3). Each triangle is composed of
               three points and this contains the three node numbers (stored in
-              nodes) which refer to the coordinates in `x' and `y' (see below).
+              nodes) which refer to the coordinates in ``x`` and ``y`` (see below).
             - nodes (np.ndarray): Integer number assigned to each node.
             - X (np.ndarray): X coordinates of each grid node.
             - Y (np.ndarray): Y coordinates of each grid node.
@@ -351,7 +353,7 @@ def read_smesh_mesh(mesh: str) -> MeshData:
     Returns:
         MeshData: Named tuple containing:
             - triangle (np.ndarray): Integer array of shape (ntri, 3). Each triangle is composed of three points and this contains the three node
-              numbers which refer to the coordinates in `x' and `y' (see below).
+              numbers which refer to the coordinates in ``x`` and ``y`` (see below).
             - nodes (Optional[np.ndarray]): None for smesh format (no node information available).
             - X (np.ndarray): X coordinates of each grid node.
             - Y (np.ndarray): Y coordinates of each grid node.
@@ -405,7 +407,7 @@ def read_mike_mesh(mesh: str, flipZ: bool = True) -> MeshData:
         MeshData: Named tuple containing:
             - triangle (np.ndarray): Integer array of shape (ntri, 3). Each triangle is composed of
               three points and this contains the three node numbers (stored in
-              nodes) which refer to the coordinates in `x' and `y' (see below). Given as
+              nodes) which refer to the coordinates in ``x`` and ``y`` (see below). Given as
               a zero-indexed array.
             - nodes (np.ndarray): Integer number assigned to each node.
             - X (np.ndarray): X coordinates of each grid node.
@@ -470,7 +472,7 @@ def read_gmsh_mesh(mesh: str) -> MeshData:
         MeshData: Named tuple containing:
             - triangle (np.ndarray): Integer array of shape (ntri, 3). Each triangle is composed of three
               points and this contains the three node numbers (stored in nodes) which
-              refer to the coordinates in `x' and `y' (see below).
+              refer to the coordinates in ``x`` and ``y`` (see below).
             - nodes (np.ndarray): Integer number assigned to each node.
             - X (np.ndarray): X coordinates of each grid node.
             - Y (np.ndarray): Y coordinates of each grid node.
@@ -576,17 +578,11 @@ def read_fvcom_obc(obc):
     Read in an FVCOM open boundary file.
 
     Args:
-    obc : str
-        Path to the casename_obc.dat file from FVCOM.
+        obc: Path to the casename_obc.dat file from FVCOM.
 
     Returns:
-    nodes : np.ndarray
-        Node IDs (zero-indexed) for the open boundary.
-    types : np.ndarray
-        Open boundary node types (see the FVCOM manual for more information on
-        what these values mean).
-    count : np.ndarray
-        Open boundary node number.
+        tuple[np.ndarray, np.ndarray, np.ndarray]: Node IDs, open boundary node
+        types, and open boundary node numbers.
 
     """
 
@@ -600,17 +596,16 @@ def read_fvcom_obc(obc):
 
 def parse_obc_sections(obc_node_array, triangle):
     """
-    Separates the open boundary nodes of a mesh into the separate contiguous open boundary segments
+    Separate open boundary nodes into contiguous open boundary segments.
 
     Args:
-    obc_node_array : array
-        Array of the nodes which are open boundary nodes, as nodes returned by read_fvcom_obc
-    triangle : 3xn array
-        Triangulation array of nodes, as triangle returned by read_fvcom_mesh
+        obc_node_array: Open boundary node IDs, as returned by
+            ``read_fvcom_obc``.
+        triangle: Triangulation array of nodes, as returned by
+            ``read_fvcom_mesh``.
 
     Returns:
-    nodestrings : list of arrays
-        A list of arrays, each of which is one contiguous section of open boundary
+        list[np.ndarray]: Contiguous open boundary node sections.
 
     """
     all_edges = np.vstack([triangle[:, 0:2], triangle[:, 1:], triangle[:, [0, 2]]])

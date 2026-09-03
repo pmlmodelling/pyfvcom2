@@ -840,6 +840,7 @@ class NestManager:
                 from for temperature and salinity. If None those variables are
                 not ramped.
             ramp_type: Shape of the ramp function. One of:
+
                 - 'cosine' (default): half-cosine, C¹ continuous at both
                   t=0 and t=ramp_length. Reaches full amplitude at t=ramp_length.
                 - 'tanh': hyperbolic tangent, C∞ everywhere but asymptotic.
