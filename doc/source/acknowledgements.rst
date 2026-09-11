@@ -1,14 +1,10 @@
 Acknowledgements
 ================
 
-Funding
--------
-
-Funding acknowledgements will be added as they are confirmed.
-
 Contributors
 ------------
 
+PyFVCOM2 builds on the work of the original PyFVCOM authors and contributors.
 See the project repository for the current contributor history.
 
 Dependencies
