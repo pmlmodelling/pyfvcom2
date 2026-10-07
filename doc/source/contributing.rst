@@ -83,6 +83,26 @@ Submitting Changes
 
 8. **Create a Pull Request** on GitHub
 
+Building the Conda Package
+==========================
+
+The published conda-forge package is built from the recipe in
+``conda/meta.yaml``. For a local build from the current
+checkout, temporarily set its source to ``path: ..`` and run from the repository
+root::
+
+    CONDA_BLD_PATH=/tmp/pyfvcom2-conda-bld conda build conda -c conda-forge
+
+Test the resulting package in a clean environment::
+
+    conda create -n pyfvcom2-conda-test -c conda-forge --use-local pyfvcom2=0.1.0
+    conda activate pyfvcom2-conda-test
+    python -c "import pyfvcom2; print(pyfvcom2.__version__)"
+
+Before submitting the recipe to conda-forge, restore the tagged GitHub source,
+create the matching ``v<version>`` tag, and add the SHA256 of the release
+archive to ``conda/meta.yaml``.
+
 Pull Request Guidelines
 =======================
 
