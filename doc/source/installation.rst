@@ -3,10 +3,8 @@
 Installation
 ============
 
-PyFVCOM2 is currently installed from source. Package-index installation is not
-available yet, so commands such as ``pip install pyfvcom2`` or
-``conda install -c conda-forge pyfvcom2`` are not documented as supported
-installation methods.
+PyFVCOM2 is distributed through PyPI and can also be installed from a source
+checkout.
 
 Python Versions
 ---------------
@@ -16,6 +14,18 @@ currently advertise Python 3.9, 3.10, and 3.11.
 
 Normal User Installation
 ------------------------
+
+Use PyPI for a normal user installation:
+
+.. code-block:: bash
+
+   python -m pip install pyfvcom2
+
+Use the source-installation route below if you need a particular checkout
+instead of the latest published release.
+
+Source Installation
+-------------------
 
 Use this route if you want to install PyFVCOM2 from a local checkout without
 installing development tools.
