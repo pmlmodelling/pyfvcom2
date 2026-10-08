@@ -565,6 +565,8 @@ class NestManager:
 
     def create_forcing_file(self, output_path: str, nest_type: int,
                             adjust_tides: Optional[list[str]] = None,
+                            extra_node_vars: Optional[list[str]] = None,
+                            extra_var_attributes: Optional[dict] = None,
                             format='NETCDF4', **kwargs) -> None:
         """ Write the nest forcing data to a NetCDF file
 
@@ -574,10 +576,26 @@ class NestManager:
             adjust_tides: List of variable names to adjust by adding tidal
                 predictions (e.g. ['zeta', 'u', 'v', 'ua', 'va']). Requires
                 that add_tidal_data has been called first.
+            extra_node_vars: Optional list of additional node-based, 3D
+                (time, siglay, node) forcing variables to write, e.g.
+                biogeochemistry/ERSEM tracers. Each name must already have
+                been registered via `add_forcing_data`.
+            extra_var_attributes: Optional mapping of variable name to a
+                dict of NetCDF attributes for the variables named in
+                `extra_node_vars`. Any variable without an entry falls back
+                to generic attributes derived from its name.
             format: NetCDF format to use. Defaults to 'NETCDF4'.
             **kwargs: Additional keyword arguments for writing the forcing file.
         """
         ncfile = os.path.basename(output_path)
+
+        if extra_node_vars:
+            missing_vars = [v for v in extra_node_vars if v not in self._forcing_data]
+            if missing_vars:
+                raise PyFVCOM2ValueError(
+                    f"extra_node_vars {missing_vars} have not been added via "
+                    "add_forcing_data."
+                )
 
         nodes = self.get_all_nest_nodes()
         elements = self.get_all_nest_elements()
@@ -822,6 +840,21 @@ class NestManager:
                     'coordinates': 'time siglev lat lon'}
             nest_ncfile.add_variable('hyw', hyw, 
                     ['time', 'siglev', 'node'], attributes=atts, ncopts=ncopts)
+
+            # Any additional node-based, 3D (time, siglay, node) forcing
+            # variables, e.g. biogeochemistry/ERSEM tracers.
+            for var_name in (extra_node_vars or []):
+                atts = {
+                    'long_name': var_name,
+                    'grid': 'fvcom_grid',
+                    'coordinates': 'time siglay lat lon',
+                    'type': 'data',
+                    'location': 'node',
+                }
+                if extra_var_attributes and var_name in extra_var_attributes:
+                    atts.update(extra_var_attributes[var_name])
+                nest_ncfile.add_variable(var_name, self._forcing_data[var_name],
+                        ['time', 'siglay', 'node'], attributes=atts, ncopts=ncopts)
 
     def apply_ramp(self, ramp_length: float, initial_ts: Optional[list] = None,
                    ramp_type: str = 'cosine') -> None:

@@ -31,6 +31,7 @@ class OpenBoundary:
         self._sigma_layers = sigma_layers
         self._sponge_radius: Optional[np.ndarray] = None
         self._sponge_coefficient: Optional[np.ndarray] = None
+        self._type: int = 1  # Default boundary type (0=no flux, 1=elevation)
 
     @property
     def bdy_id(self) -> int:
@@ -86,6 +87,23 @@ class OpenBoundary:
     def sponge_coefficient(self) -> Optional[np.ndarray]:
         """Sponge layer coefficient at each boundary node, or None if not set."""
         return self._sponge_coefficient
+
+    @property
+    def bdy_type(self) -> int:
+        """Get the boundary type.
+        
+        Returns:
+            Boundary type flag (0=no flux, 1=elevation, etc.).
+        """
+        return self._type
+
+    def set_type(self, bdy_type: int = 1) -> None:
+        """Set the boundary type.
+        
+        Args:
+            bdy_type: Boundary type flag (default 1 for elevation boundaries).
+        """
+        self._type = int(bdy_type)
 
     def set_sponge(self, radius: float | np.ndarray,
                    coefficient: float | np.ndarray) -> None:
@@ -560,7 +578,7 @@ class Grid:
         types = []
         for boundary in self.open_boundaries:
             ids.extend(boundary.node_indices.tolist())
-            types.extend([boundary.bdy_id] * boundary.nnodes)
+            types.extend([boundary.bdy_type] * boundary.nnodes)
 
         with open(obc_file, 'w') as f:
             f.write('OBC Node Number = {:d}\n'.format(len(ids)))
