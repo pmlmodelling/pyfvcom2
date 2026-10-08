@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0.3", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -13,11 +13,11 @@ authors = [
     {name = "Al Azhar (Original PyFVCOM author)"},
     {name = "Marius Dewar (Original PyFVCOM author)"},
 ]
-license = {file = "LICENSE.txt"}
+license = "MIT"
+license-files = ["LICENSE.txt"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -68,7 +68,7 @@ docs = [
 
 [project.urls]
 Homepage = "https://github.com/pmlmodelling/pyfvcom2"
-Repository = "https://github.com/pmlmodelling/pyfvcom2.git"
+Repository = "https://github.com/pmlmodelling/pyfvcom2"
 Issues = "https://github.com/pmlmodelling/pyfvcom2/issues"
 "Original PyFVCOM" = "https://github.com/pmlmodelling/PyFVCOM"
 

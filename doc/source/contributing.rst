@@ -83,6 +83,38 @@ Submitting Changes
 
 8. **Create a Pull Request** on GitHub
 
+Publishing a PyPI Release
+=========================
+
+PyPI releases are built from the repository metadata in ``pyproject.toml``.
+Before publishing, update the release version in ``pyfvcom2/version.py`` and
+make sure the version has not already been published to PyPI.
+
+Build and validate both distribution formats:
+
+.. code-block:: bash
+
+    python -m pip install --upgrade build twine
+    rm -rf dist
+    python -m build
+    python -m twine check dist/*
+
+After reviewing the generated files in ``dist/``, upload them with a PyPI API
+token configured in the environment or in ``~/.pypirc``:
+
+.. code-block:: bash
+
+    python -m twine upload dist/*
+
+Create a Git tag for the published version and verify the installation from
+PyPI:
+
+.. code-block:: bash
+
+    git tag v<version>
+    git push origin v<version>
+    python -m pip install --upgrade pyfvcom2
+
 Pull Request Guidelines
 =======================
 
