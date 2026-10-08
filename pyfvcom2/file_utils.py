@@ -11,6 +11,31 @@ from pyfvcom2.exceptions import PyFVCOM2FileNotFoundError
 
 __all__ = ["find_file", "find_files"]
 
+_TIME_VAR_CANDIDATES = ("time", "time_counter", "time_instant", "t")
+
+
+def _read_time_as_datetimes(file_path: str):
+    """Read the time coordinate from a NetCDF file as a list of datetimes.
+
+    Tries a set of common time variable names in order.
+    """
+    with Dataset(file_path) as ds:
+        time_var_name = next(
+            (name for name in _TIME_VAR_CANDIDATES if name in ds.variables),
+            None,
+        )
+        if time_var_name is None:
+            raise KeyError(
+                f"No recognised time variable found in {file_path}. "
+                f"Tried: {_TIME_VAR_CANDIDATES}"
+            )
+        time_var = ds.variables[time_var_name]
+        return num2pydate(
+            time_var[:],
+            units=time_var.units,
+            calendar=getattr(time_var, "calendar", "standard"),
+        )
+
 
 def find_file(
     dir_name: str,
@@ -42,17 +67,7 @@ def find_file(
     end_time = date_time + timedelta(hours=tolerance_hours)
 
     for file_path in candidate_files:
-        with Dataset(file_path) as ds:
-            # Read time variable and convert to datetime
-            datetimes = num2pydate(
-                ds.variables["time"][:],
-                units=ds.variables["time"].units,
-                calendar=(
-                    ds.variables["time"].calendar
-                    if hasattr(ds.variables["time"], "calendar")
-                    else "standard"
-                ),
-            )
+        datetimes = _read_time_as_datetimes(file_path)
 
         if datetimes[0] <= start_time and datetimes[-1] >= end_time:
             file_path_found = file_path
@@ -94,17 +109,7 @@ def find_files(
     matched_files = []
 
     for file_path in candidate_files:
-        with Dataset(file_path) as ds:
-            # Read time variable and convert to datetime
-            datetimes = num2pydate(
-                ds.variables["time"][:],
-                units=ds.variables["time"].units,
-                calendar=(
-                    ds.variables["time"].calendar
-                    if hasattr(ds.variables["time"], "calendar")
-                    else "standard"
-                ),
-            )
+        datetimes = _read_time_as_datetimes(file_path)
 
         if datetimes[0] <= end_date_time and datetimes[-1] >= start_date_time:
             matched_files.append(file_path)

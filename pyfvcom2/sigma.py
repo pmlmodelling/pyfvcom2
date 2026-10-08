@@ -213,7 +213,7 @@ def write_sigma_file(sigma_config: SigmaConfig, sigma_file: str):
     with sigma_file.open("w") as f:
         # All types of sigma distribution have the two following lines.
         f.write("NUMBER OF SIGMA LEVELS = {:d}\n".format(sigma_config.nlev))
-        f.write("SIGMA COORDINATE TYPE = {}\n".format(sigma_config.sigtype))
+        f.write("SIGMA COORDINATE TYPE = {}\n".format(sigma_config.sigtype.upper()))
         if sigma_config.sigtype.lower() == "generalized":
             f.write("DU = {:4.1f}\n".format(sigma_config.du))
             f.write("DL = {:4.1f}\n".format(sigma_config.dl))
