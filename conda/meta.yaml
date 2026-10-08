@@ -1,5 +1,5 @@
 {% set name = "pyfvcom2" %}
-{% set version = load_setup_py_data().get('version') %}
+{% set version = "0.1.0" %}
 
 
 package:
@@ -7,9 +7,9 @@ package:
   version: {{ version }}
 
 source:
-  #url: https://github.com/pmlmodelling/pyfvcom2/archive/v{{ version }}.tar.gz
-  # For local development, use:
-  path: ..
+  url: https://github.com/pmlmodelling/pyfvcom2/archive/refs/tags/v{{ version }}.tar.gz
+  # Add the SHA256 for the release archive after tagging v{{ version }}.
+  # sha256: <release-archive-sha256>
 
 build:
   noarch: python
@@ -29,6 +29,12 @@ requirements:
     - matplotlib-base >=3.3.0
     - netcdf4 >=1.5.0
     - xarray >=0.16.0
+    - pyproj
+    - cftime >=1.6.0
+    - cartopy >=0.20.0
+    - cmocean >=2.0
+    - stripy >=0.6.0
+    - utide
 
 test:
   imports:
@@ -50,4 +56,3 @@ about:
     grid ocean model results. It is intended to be the successor of PyFVCOM.
   doc_url: https://github.com/pmlmodelling/pyfvcom2
   dev_url: https://github.com/pmlmodelling/pyfvcom2
-
