@@ -39,6 +39,7 @@ class CMEMSReader:
 
         # Load only the first file initially for metadata and time-independent data
         print(f'Accessing CMEMS metadata from: {self.file_paths[0]}')
+        print(f'Accessing CMEMS data from: {self.file_paths[:]}')
         self._metadata_dataset = xr.open_dataset(self.file_paths[0])
         
         # Set dimension variable names
@@ -100,7 +101,7 @@ class CMEMSReader:
             )
 
         # Check reference var dimensions
-        if self.has_depth_dimension:
+        if self.has_depth_dimension and self.reference_var_name != 'zos':
             if (
                 self.depth_dim_name
                 not in self._metadata_dataset.variables[self.reference_var_name].dims
@@ -245,7 +246,7 @@ class CMEMSReader:
         var = self._metadata_dataset[self.reference_var_name].isel({self.time_dim_name: 0})
         var_mask = self.get_mask(var)
 
-        if not self.has_depth_dimension:
+        if not self.has_depth_dimension or self.reference_var_name == 'zos':
             reference_mask_3D = None
             reference_mask_2D = var_mask
         else:
