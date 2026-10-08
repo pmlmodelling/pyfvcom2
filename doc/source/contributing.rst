@@ -4,16 +4,17 @@
 Contributing
 ************
 
-We welcome contributions to PyFVCOM2! This guide will help you get started with contributing code, documentation, or bug reports.
+We welcome contributions to PyFVCOM2. This guide covers the development setup,
+checks, and review process for code, documentation, and bug reports.
 
 Development Setup
 =================
 
-1. **Fork the repository** on GitHub
+1. **Fork the repository** on GitHub if you plan to open a pull request.
 
-2. **Clone your fork**::
+2. **Clone your fork or the upstream repository**::
 
-    git clone https://github.com/yourusername/pyfvcom2.git
+    git clone https://github.com/pmlmodelling/pyfvcom2.git
     cd pyfvcom2
 
 3. **Create a development environment**::
@@ -21,11 +22,7 @@ Development Setup
     conda env create -f environment.yml
     conda activate pyfvcom2
 
-4. **Install in development mode**::
-
-    pip install -e .
-
-5. **Install development dependencies**::
+4. **Install the package with development dependencies**::
 
     pip install -e ".[dev]"
 
@@ -39,13 +36,16 @@ Code Standards
 - Write docstrings in NumPy/SciPy format
 - Keep line length under 88 characters (Black formatter default)
 
-**Code Quality:**
+**Required checks:**
 
 - Run tests: ``pytest tests/``
-- Check formatting: ``black --check pyfvcom2/``
-- Check imports: ``isort --check-only pyfvcom2/``
-- Type checking: ``mypy pyfvcom2/``
-- Linting: ``flake8 pyfvcom2/``
+- Check for Python syntax and undefined-name errors:
+  ``flake8 pyfvcom2 --jobs=1 --count --select=E9,F63,F7,F82 --show-source --statistics``
+
+**Optional local checks:**
+
+- Run broader linting:
+  ``flake8 pyfvcom2 --jobs=1 --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics``
 
 **Testing:**
 
@@ -67,9 +67,10 @@ Submitting Changes
 
 4. **Update documentation** if needed
 
-5. **Run the test suite**::
+5. **Run the required checks**::
 
     pytest tests/
+    flake8 pyfvcom2 --jobs=1 --count --select=E9,F63,F7,F82 --show-source --statistics
 
 6. **Commit your changes**::
 
@@ -88,14 +89,12 @@ Pull Request Guidelines
 **Before submitting:**
 
 - Ensure all tests pass
-- Update CHANGELOG.rst with your changes
-- Add yourself to AUTHORS.rst (if not already there)
 - Write a clear PR description explaining the changes
 
 **PR Review Process:**
 
 - All PRs must be reviewed by at least one maintainer
-- Automated checks (CI/CD) must pass
+- Automated checks must pass
 - Documentation must be updated for API changes
 - Breaking changes require discussion and approval
 
@@ -114,14 +113,13 @@ Types of Contributions
 - API documentation improvements
 - Tutorial and example development
 - User guide enhancements
-- Translation efforts
 
 **Other Contributions:**
 
 - Bug reports with reproducible examples
 - Feature requests with use cases
 - Performance benchmarking
-- Community support and discussions
+- Answering questions in issues and pull requests
 
 Reporting Issues
 ================
@@ -147,18 +145,15 @@ Communication
 =============
 
 - **GitHub Issues**: Bug reports and feature requests
-- **GitHub Discussions**: General questions and ideas
 - **Pull Requests**: Code review and technical discussion
-- **Email**: Contact maintainers for sensitive issues
 
 Recognition
 ===========
 
 Contributors are recognized in:
 
-- AUTHORS.rst file
-- Release notes and changelog
 - GitHub contributor statistics
-- Conference presentations (with permission)
+- Pull request and issue history
+- Release notes when relevant
 
 Thank you for contributing to PyFVCOM2!

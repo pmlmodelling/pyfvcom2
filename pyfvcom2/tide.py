@@ -190,26 +190,18 @@ def predict_tide(
     using the provided tidal constituent amplitudes and phases.
 
     Args:
-    datetimes : np.ndarray
-        Array of datetime objects for prediction times.
-    interval : float
-        Time interval between datetimes in days.
-    constituents : list[str]
-        List of tidal constituent names to read.
-    amplitudes : np.ndarray
-        Amplitude of the relevant constituents shaped [nlocs, nconst].
-    phases : np.ndarray
-        Array of the phase of the relevant constituents shaped [nlocs, nconst].
-    latitudes : np.ndarray
-        Latitudes of the positions to predict.
-    parallel : bool, optional
-        Whether to run the predictions in parallel using multiprocessing. Default is True.
-    pool_size : int, optional
-        Number of parallel processes to use. If 1, runs serially. Default is
-        1.
+        datetimes: Array of datetime objects for prediction times.
+        constituents: List of tidal constituent names to read.
+        amplitudes: Amplitudes of the relevant constituents shaped
+            ``[nlocs, nconst]``.
+        phases: Phases of the relevant constituents shaped ``[nlocs, nconst]``.
+        latitudes: Latitudes of the positions to predict.
+        parallel: Whether to run the predictions in parallel using
+            multiprocessing. Default is True.
+        pool_size: Number of parallel processes to use. If 1, runs serially.
+
     Returns:
-    results : list[np.ndarray]
-        List of predicted zeta time series arrays for each location.
+        list[np.ndarray]: Predicted zeta time series arrays for each location.
     """
     const_indices = np.asarray(
         [ut_constants["const"]["name"].tolist().index(i) for i in constituents]
@@ -267,17 +259,13 @@ def reconstruct_wrapper(args: tuple) -> np.ndarray:
     series at the given latitude.
 
     Args:
-    args : tuple
-        Tuple of (lats, times, coef, amplitudes, phases) where:
-        - lats: Latitude of the position to predict.
-        - times: Array of datenums (days since MJD zero point).
-        - coef: UTide coefficients Bunch.
-        - amplitudes: Amplitude of the relevant constituents shaped [nconst].
-        - phases: Phase of the relevant constituents shaped [nconst].
+        args: Tuple of ``(lats, times, coef, amplitudes, phases)`` where
+            ``lats`` is the latitude, ``times`` are datenums, ``coef`` is the
+            UTide coefficients bunch, and ``amplitudes`` and ``phases`` are
+            shaped ``[nconst]``.
 
     Returns:
-    zeta : np.ndarray
-        Time series of surface elevations.
+        np.ndarray: Time series of surface elevations.
 
     Notes
     -----
@@ -1014,4 +1002,3 @@ class HarmonicsAnalyser:
                 data[global_idxs, :] = slice_
 
         return data
-

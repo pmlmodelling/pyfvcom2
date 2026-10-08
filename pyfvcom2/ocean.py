@@ -3,10 +3,12 @@ A collection of some useful ocean functions. These are taken from a range of
 MATLAB toolboxes as well as from ocean_funcs.ncl, which in turn has taken them
 from the CSIRO SEAWATER (now GSW) MATLAB toolbox.
 
-The NCL code can be found at:
+The NCL code can be found at::
+
     http://www.ncl.ucar.edu/Support/talk_archives/2013/att-1501/ocean_funcs.ncl__size_15540__creation-date_
 
-The MATLAB toolboxes used includes:
+The MATLAB toolboxes used includes::
+
     http://www.cmar.csiro.au/datacentre/ext_docs/seawater.htm
     http://mooring.ucsd.edu/software/matlab/doc/toolbox/ocean/
     http://www.mbari.org/staff/etp3/ocean1.htm
@@ -31,7 +33,8 @@ The Simpson-Hunter parameter is described in:
     404-6.
 
 The relative humidity from dew point temperature and ambient temperature is
-taken from:
+taken from::
+
     http://www.vaisala.com/Vaisala%20Documents/Application%20notes/Humidity_Conversion_Formulas_B210973EN-F.pdf
 
 Provides functions:

@@ -1,80 +1,111 @@
 .. _installation:
 
-************
 Installation
-************
-
-PyFVCOM2 can be installed using pip or conda. We recommend using conda for scientific Python environments as it handles complex dependencies more reliably.
-
-Using Conda (Recommended)
-=========================
-
-Create a new conda environment with PyFVCOM2::
-
-    conda env create -f environment.yml
-    conda activate pyfvcom2
-
-Or install into an existing environment::
-
-    conda install -c conda-forge pyfvcom2
-
-Using Pip
-=========
-
-Install from PyPI::
-
-    pip install pyfvcom2
-
-For development installation::
-
-    git clone https://github.com/pmlmodelling/pyfvcom2.git
-    cd pyfvcom2
-    pip install -e .
-
-Dependencies
 ============
 
-PyFVCOM2 requires the following packages:
+PyFVCOM2 is currently installed from source. Package-index installation is not
+available yet, so commands such as ``pip install pyfvcom2`` or
+``conda install -c conda-forge pyfvcom2`` are not documented as supported
+installation methods.
 
-**Core Dependencies:**
+Python Versions
+---------------
 
-- Python >= 3.8
-- NumPy >= 1.19
-- SciPy >= 1.5
-- NetCDF4 >= 1.5
-- xarray >= 0.16
+The project metadata requires Python 3.8 or newer. The package classifiers
+currently advertise Python 3.9, 3.10, and 3.11.
 
-**Visualization Dependencies:**
+Normal User Installation
+------------------------
 
-- Matplotlib >= 3.3
-- Cartopy >= 0.18
+Use this route if you want to install PyFVCOM2 from a local checkout without
+installing development tools.
 
-**Optional Dependencies:**
+First, create and activate an environment:
 
-- Jupyter (for notebook examples)
+.. code-block:: bash
 
-Verifying Installation
-======================
+   conda create -n pyfvcom2 -c conda-forge python=3.11 pip
+   conda activate pyfvcom2
 
-Test your installation::
+Then clone and install the package:
 
-    python -c "import pyfvcom2; print(pyfvcom2.__version__)"
+.. code-block:: bash
 
-Run the test suite::
+   git clone https://github.com/pmlmodelling/pyfvcom2.git
+   cd pyfvcom2
+   python -m pip install .
 
-    python -m pytest tests/
+Development Installation
+------------------------
+
+Use this route if you want to edit the source code, run tests, or build the
+documentation.
+
+.. code-block:: bash
+
+   git clone https://github.com/pmlmodelling/pyfvcom2.git
+   cd pyfvcom2
+   conda env create -f environment.yml
+   conda activate pyfvcom2
+
+The development environment installs PyFVCOM2 in editable mode through the
+``environment.yml`` file.
+
+To install the editable package manually in an existing environment:
+
+.. code-block:: bash
+
+   python -m pip install -e .
+
+Installation Test
+-----------------
+
+Check that PyFVCOM2 imports:
+
+.. code-block:: bash
+
+   python -c "import pyfvcom2"
+
+To print the installed version:
+
+.. code-block:: bash
+
+   python -c "import pyfvcom2; print(pyfvcom2.__version__)"
+
+Dependencies
+------------
+
+Runtime dependencies are defined in ``pyproject.toml``. They currently include:
+
+* ``numpy>=1.19.0``
+* ``scipy>=1.5.0``
+* ``matplotlib>=3.3.0``
+* ``netCDF4>=1.5.0``
+* ``xarray>=0.16.0``
+* ``pyproj``
+* ``cftime>=1.6.0``
+* ``cartopy>=0.20.0``
+* ``cmocean>=2.0``
+* ``stripy>=0.6.0``
+* ``utide``
+
+For scientific Python environments, conda-forge is recommended for compiled
+geospatial and NetCDF dependencies such as ``cartopy``, ``pyproj``, and
+``netCDF4``.
+
+Optional Development and Documentation Dependencies
+---------------------------------------------------
+
+Development dependencies, including ``pytest``, ``black``, ``flake8``, ``mypy``,
+and ``pre-commit``, are listed in the ``dev`` optional dependency group in
+``pyproject.toml``.
+
+Documentation dependencies are listed in the ``docs`` optional dependency group
+and in ``doc/requirements.txt``.
 
 Troubleshooting
-===============
+---------------
 
-**Common Issues:**
-
-1. **Cartopy installation problems**: Install via conda-forge channel
-2. **NetCDF4 library not found**: Install libnetcdf development headers
-3. **GEOS/PROJ errors**: Update to latest cartopy version
-
-**Getting Help:**
-
-- Check the GitHub Issues page
-- Join the PyFVCOM2 discussions
-- Contact the development team
+If installation fails while building compiled dependencies, create the
+environment with conda-forge first, then install PyFVCOM2 into that environment.
+This avoids many local compiler and system-library issues.

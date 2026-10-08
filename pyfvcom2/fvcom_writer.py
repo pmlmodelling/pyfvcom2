@@ -32,7 +32,7 @@ class FVCOMWriter(object):
 
     def add_variable(self, name, data, dimensions, attributes=None, format='f4', ncopts={}):
         """
-        Create a `name' variable with the given `attributes' and `data'.
+        Create a ``name`` variable with the given ``attributes`` and ``data``.
 
         Parameters
         ----------
@@ -100,5 +100,4 @@ class FVCOMWriter(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         """ Tidy up the netCDF file handle. """
         self.nc.close()
-
 

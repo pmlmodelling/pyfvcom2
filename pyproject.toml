@@ -67,9 +67,9 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/pyfvcom2"
-Repository = "https://github.com/yourusername/pyfvcom2.git"
-Issues = "https://github.com/yourusername/pyfvcom2/issues"
+Homepage = "https://github.com/pmlmodelling/pyfvcom2"
+Repository = "https://github.com/pmlmodelling/pyfvcom2.git"
+Issues = "https://github.com/pmlmodelling/pyfvcom2/issues"
 "Original PyFVCOM" = "https://github.com/pmlmodelling/PyFVCOM"
 
 [tool.setuptools.dynamic]
